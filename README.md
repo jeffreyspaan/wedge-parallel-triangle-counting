@@ -3,7 +3,7 @@ See [...]
 
 ## Requirements
 
->CUDA 12.4**, gcc
+CUDA (tested on 12.4), gcc
 
 ## Compile & run
 
