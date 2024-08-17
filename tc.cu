@@ -19,7 +19,6 @@
 #include <stdbool.h>
 #include <sys/time.h>
 
-#define LOOP_CNT 20
 #define CHECK_BOUNDS 1
 #define RESET_DEVICE 0
 
@@ -110,7 +109,7 @@ __device__ INT_t binarySearch_GPU(const UINT_t* list, const UINT_t start, const 
 __device__ UINT_t binarySearch_closest_ULONG_GPU(const ULONG_t* list, const UINT_t start, const UINT_t end, const ULONG_t target) {
 	/* Finds the index of the rightmost closest value smaller or equal than target, e.g.,
 	 * for target 1 and list=[0,0,0,2,2,2] it returns 2,
-	 * for target 2 and list=[0,0,0,2,2,2] it returns 3.
+	 * for target 2 and list=[0,0,0,2,2,2] it returns 5.
 	 * Assumes list[0]=0
 	 * Assumes end-1 <= UINT_MAX/2
 	 */
@@ -172,13 +171,13 @@ __global__ void tc_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const ULON
 	UINT_t v;
 	UINT_t w;
 	UINT_t u;
-	UINT_t vb;        // Start index of adj(v)
-	UINT_t ve;        // End index of adj(v)
-	UINT_t d_v;       // Degree of v
-	UINT_t w_i;       // Index of w in adj(v)
-	UINT_t u_i;       // Index of u in adj(v)
+	UINT_t vb;				// Start index of adj(v)
+	UINT_t ve;				// End index of adj(v)
+	UINT_t d_v;				// Degree of v
+	UINT_t w_i;				// Index of w in adj(v)
+	UINT_t u_i;				// Index of u in adj(v)
 	UINT_t wedges;		// Number of wedges of v
-	UINT_t i_v;       // Index of current wedge in wedges(v) (i.e., 0...(d_v*(d_v-1)/2)-1)
+	UINT_t i_v;				// Index of current wedge in wedges(v) (i.e., 0...(d_v*(d_v-1)/2)-1)
 
 	UINT_t s_i = threadIdx.x*spread;
 
@@ -236,7 +235,7 @@ __global__ void tc_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const ULON
 
 	__syncthreads();
 
-	/* Index into the shared transposed matrix (spread X blockDim.x) */
+	/* Index into the shared 'transposed' matrix (spread X blockDim.x) */
 	for (s_i=threadIdx.x; s_i<(blockDim.x*spread); s_i+=blockDim.x) {
 		/* Check bounds. */
 #if CHECK_BOUNDS
@@ -429,10 +428,11 @@ void usage() {
   printf(" -s <num>     	 [Spread, a.k.a. wedges/thread]\n");
   printf(" -a <num>        [Adjacency matrix length] (must be divisble by 32)\n");
   printf("Optional arguments:\n");
-  printf(" -z              [Input graph is zero-indexed]\n");
+  printf(" -l <num>        [Loop count]\n");
+	printf(" -z              [Input graph is zero-indexed]\n");
 	printf("\n");
 	printf("Example:\n");
-	printf("./tc -m Amazon0302.mtx -s 7 -a 4096\n");
+	printf("./tc -m Amazon0302.mtx -s 5 -a 8192 -l 10\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -674,6 +674,7 @@ int main(int argc, char **argv) {
 	char *graph_filename = NULL;
 	bool graph_mm = false;
 	bool graph_zero_indexed = false;
+	UINT_t loop_cnt = 1;
 
 	UINT_t spread = 0;
 	UINT_t adjacency_matrix_len = 0;
@@ -715,6 +716,12 @@ int main(int argc, char **argv) {
 				argv+=2;
 				argc-=2;
 				break;
+			case 'l':
+				if (argc < 3) usage();
+				loop_cnt = atoi(argv[2]);
+				argv+=2;
+				argc-=2;
+				break;
 		}
 	}
 
@@ -731,7 +738,7 @@ int main(int argc, char **argv) {
 
 	bool warmed_up = false;
 
-	for (UINT_t i=0; i<(LOOP_CNT+1); i++) {
+	for (UINT_t i=0; i<(loop_cnt+1); i++) {
 		double t_cpu = get_seconds();
 		GPU_time t_gpu = { .copy=0.0, .exec=0.0 };
 
