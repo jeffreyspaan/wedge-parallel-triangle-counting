@@ -1,7 +1,7 @@
 /* Wedge-Parallel Triangle Counting
  * Jeffrey Spaan, Ana-Lucia Varbanescu, Kuan Chen.
  *
- * Based the work of David Bader. See https://github.com/Bader-Research/triangle-counting/ and https://doi.org/10.1109/HPEC58863.2023.10363539
+ * Based on the work and code of David Bader. See https://github.com/Bader-Research/triangle-counting/ and https://doi.org/10.1109/HPEC58863.2023.10363539
  *
  * See usage() for instructions.
  * 
