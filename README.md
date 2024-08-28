@@ -7,7 +7,7 @@ CUDA (tested on 12.4), gcc
 
 ## Compile & run
 
-To compile the code use (and match your target architecture in the `Makefile`, the default is `-arch native`):
+To compile the code use (and match your target architecture in the `Makefile`, the default is `sm_86`):
 
     $ make
 

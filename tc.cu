@@ -21,6 +21,7 @@
 
 #define CHECK_BOUNDS 1
 #define RESET_DEVICE 0
+#define BINSEARCH_CONSTANT 1
 
 #define BINSEARCH_CONSTANT_LEVELS 12
 #define BINSEARCH_CONSTANT_CACHE_SIZE ((1 << BINSEARCH_CONSTANT_LEVELS) - 1) // 2^levels - 1
@@ -76,7 +77,9 @@ typedef struct {
  *  GPU  *
  *********/
 
+#if BINSEARCH_CONSTANT
 __constant__ ULONG_t c_binarySearch_cache[BINSEARCH_CONSTANT_CACHE_SIZE];
+#endif
 
 __device__ INT_t linearSearch_GPU(const UINT_t* list, const UINT_t start, const UINT_t end, const UINT_t target) {
 	for (UINT_t i=start; i<end; i++) {
@@ -91,7 +94,7 @@ __device__ INT_t linearSearch_GPU(const UINT_t* list, const UINT_t start, const 
 }
 
 __device__ INT_t binarySearch_GPU(const UINT_t* list, const UINT_t start, const UINT_t end, const UINT_t target) {
-	INT_t s=start, e=end, mid;
+	UINT_t s=start, e=end, mid;
 	while (s < e) {
 		mid = (s + e) >> 1;
 		if (list[mid] == target)
@@ -114,7 +117,7 @@ __device__ UINT_t binarySearch_closest_ULONG_GPU(const ULONG_t* list, const UINT
 	 * Assumes end-1 <= UINT_MAX/2
 	 */
 
-	register INT_t s=start, e=end, mid;
+	UINT_t s=start, e=end, mid;
 	while (s < e) {
 		mid = (s + e) >> 1;
 
@@ -125,9 +128,10 @@ __device__ UINT_t binarySearch_closest_ULONG_GPU(const ULONG_t* list, const UINT
 		}
 	}
 	
-	return max2(start, s-1);
+	return max2(start, (s > 0) ? s-1 : 0);
 }
 
+#if BINSEARCH_CONSTANT
 __device__ UINT_t binarySearch_closest_ULONG_constant_GPU(const ULONG_t *list, const UINT_t start, const UINT_t end, const ULONG_t target) {
 	/* Finds the index of the rightmost closest value smaller or equal than target.
 	 * Uses constant memory for the first BINSEARCH_CONSTANT_LEVELS levels.
@@ -156,9 +160,10 @@ __device__ UINT_t binarySearch_closest_ULONG_constant_GPU(const ULONG_t *list, c
 		}
 	}
 
-	g_s = max2(start, g_s-1);
+	g_s = max2(start, (g_s > 0) ? g_s-1 : 0);
 	return binarySearch_closest_ULONG_GPU(list, g_s, g_e, target);
 }
+#endif
 
 __global__ void tc_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const ULONG_t *g_wedgeSum, const ULONG_t wedgeSum_total, const UINT_t num_vertices, ULONG_t *g_total_count, const UINT_t spread, const UINT_t *g_adjacency_matrix, const UINT_t adjacency_matrix_len, const ULONG_t adjacency_matrix_size) {
 	const ULONG_t i_start = ((ULONG_t) blockIdx.x * blockDim.x + threadIdx.x) * spread;
@@ -184,8 +189,11 @@ __global__ void tc_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const ULON
 	for (ULONG_t i=i_start; i<min2(i_start+spread, wedgeSum_total); i++, i_v++, s_i++) {
 		if (i == i_start) {
 			/* First wedge. */
-			// v = binarySearch_closest_ULONG_GPU(g_wedgeSum, 0, num_vertices, i_start);
+#if BINSEARCH_CONSTANT
 			v = binarySearch_closest_ULONG_constant_GPU(g_wedgeSum, 0, num_vertices, i_start);
+#else
+			v = binarySearch_closest_ULONG_GPU(g_wedgeSum, 0, num_vertices, i_start);
+#endif
 
 			vb = g_Ap[v];
 			ve = g_Ap[v+1];
@@ -247,7 +255,7 @@ __global__ void tc_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const ULON
 		u = shared_dst[s_i];
 
 		if (w >= (max2(num_vertices, adjacency_matrix_len) - adjacency_matrix_len)) {
-			UINT_t adjacency_i = adjacency_matrix_size - (((num_vertices-w)*((num_vertices-w)-1)) >> 1) + u - w - 1;
+			ULONG_t adjacency_i = (adjacency_matrix_size - (((ULONG_t) (num_vertices-w) * (ULONG_t) ((num_vertices-w)-1)) >> 1)) + u - w - 1;
 
 #if UINT_WIDTH == 32
 			bool found = (g_adjacency_matrix[adjacency_i >> 5] & (1 << (adjacency_i & 31))) > 0;
@@ -299,7 +307,7 @@ void build_binary_search_cache(ULONG_t *src, ULONG_t *cache, UINT_t level, UINT_
 	}
 }
 
-ULONG_t tc_GPU(const GRAPH_TYPE *graph, UINT_t spread, UINT_t adjacency_matrix_len,  GPU_time *t) {
+ULONG_t tc_GPU(const GRAPH_TYPE *graph, UINT_t spread, UINT_t adjacency_matrix_len, GPU_time *t) {
 	UINT_t *d_Ap;
 	UINT_t *d_Ai;
 	ULONG_t *d_wedgeSum;
@@ -322,7 +330,8 @@ ULONG_t tc_GPU(const GRAPH_TYPE *graph, UINT_t spread, UINT_t adjacency_matrix_l
 		for (UINT_t i=graph->rowPtr[v]; i<graph->rowPtr[v+1]; i++) {
 			UINT_t w = graph->colInd[i];
 
-			UINT_t adjacency_i = adjacency_matrix_size - (((graph->numVertices-v)*((graph->numVertices-v)-1))/2) + w - v - 1;
+			ULONG_t adjacency_i = (adjacency_matrix_size - (((ULONG_t) (graph->numVertices-v) * (ULONG_t) ((graph->numVertices-v)-1)) / 2)) + w - v - 1;
+
 #if UINT_WIDTH == 32
 			h_adjacency_matrix[adjacency_i >> 5] |= (1 << (adjacency_i & 31));
 #else
@@ -347,9 +356,11 @@ ULONG_t tc_GPU(const GRAPH_TYPE *graph, UINT_t spread, UINT_t adjacency_matrix_l
 	ULONG_t wedgeSum_total = h_wedgeSum[graph->numVertices];
 	// printf("wedgeSum_total=%lu\n", wedgeSum_total);
 
+#if BINSEARCH_CONSTANT
 	ULONG_t *h_wedgeSum_cache = (ULONG_t *) malloc(BINSEARCH_CONSTANT_CACHE_SIZE * sizeof(ULONG_t));
 	assert_malloc(h_wedgeSum_cache);
 	build_binary_search_cache(h_wedgeSum, h_wedgeSum_cache, 0, BINSEARCH_CONSTANT_LEVELS, 0, 0, graph->numVertices);
+#endif
 
 	checkCudaErrors(cudaEventRecord(GPU_copy_start));
 
@@ -363,7 +374,10 @@ ULONG_t tc_GPU(const GRAPH_TYPE *graph, UINT_t spread, UINT_t adjacency_matrix_l
 	checkCudaErrors(cudaMemcpy(d_Ai, graph->colInd, graph->numEdges * sizeof(UINT_t), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_wedgeSum, h_wedgeSum, (graph->numVertices+1) * sizeof(ULONG_t), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_adjacency_matrix, h_adjacency_matrix, (adjacency_matrix_size/32) * sizeof(UINT_t), cudaMemcpyHostToDevice));
+	
+#if BINSEARCH_CONSTANT
 	checkCudaErrors(cudaMemcpyToSymbol(c_binarySearch_cache, h_wedgeSum_cache, BINSEARCH_CONSTANT_CACHE_SIZE * sizeof(ULONG_t)));
+#endif
 
 	checkCudaErrors(cudaMemset(d_total_count, 0, 1 * sizeof(ULONG_t)));
 
@@ -409,8 +423,11 @@ ULONG_t tc_GPU(const GRAPH_TYPE *graph, UINT_t spread, UINT_t adjacency_matrix_l
 	checkCudaErrors(cudaEventDestroy(GPU_exec_stop));
 
 	free(h_wedgeSum);
-	free(h_wedgeSum_cache);
 	free(h_adjacency_matrix);
+
+#if BINSEARCH_CONSTANT
+	free(h_wedgeSum_cache);
+#endif
 	
 #if RESET_DEVICE
 	checkCudaErrors(cudaDeviceReset());
@@ -670,6 +687,27 @@ void free_graph(GRAPH_TYPE *graph) {
 	free(graph);
 }
 
+void print_degrees(GRAPH_TYPE *graph, const char *filename, UINT_t num, bool oneify) {
+	FILE *outfile = fopen(filename, "w");
+
+	printf("n=%u step=%u\n", graph->numVertices, max2(1,(graph->numVertices / num)));
+
+	for (UINT_t v=0; v<graph->numVertices; v += max2(1,(graph->numVertices / num))) {
+		if (oneify) {
+			UINT_t degree = 0;
+			for (UINT_t i=graph->rowPtr[v]; i<graph->rowPtr[v+1]; i++) {
+				if (graph->colInd[i] > v)
+					degree++;
+			}
+			fprintf(outfile, "%u %u\n", v, degree);
+		} else {
+			fprintf(outfile, "%u %u\n", v, graph->rowPtr[v+1]-graph->rowPtr[v]);
+		}
+	}
+
+	fclose(outfile);
+}
+
 int main(int argc, char **argv) {
 	char *graph_filename = NULL;
 	bool graph_mm = false;
@@ -697,12 +735,12 @@ int main(int argc, char **argv) {
 				break;
 			case 'a':
 				/* Adjacency matrix lengths:
-				*   8192 ~= 4MB
-				*   16384 ~= 17MB
-				*   32768 ~= 67MB
-				*   65536 ~= 268MB
-				*   131072 ~= 1GB
-				*/
+				 *   8192 ~= 4MiB
+				 *   16384 ~= 16MiB
+				 *   32768 ~= 64MiB
+				 *   65536 ~= 265MiB
+				 *   131072 ~= 1024MiB
+				 */
 				if (argc < 3) usage();
 				adjacency_matrix_len = atoi(argv[2]);
 				if (adjacency_matrix_len % 32 != 0) usage();
@@ -728,10 +766,10 @@ int main(int argc, char **argv) {
 	if (graph_filename == NULL || spread == 0) usage();
 
 	GRAPH_TYPE *original_graph = read_graph(graph_filename, graph_mm, graph_zero_indexed);
-	
 	double t_preprocessing = get_seconds();
 	GRAPH_TYPE *graph = preprocess(original_graph);
 	t_preprocessing = get_seconds() - t_preprocessing;
+	free_graph(original_graph);
 
 	printf("%-60s %16s %16s %16s %16s %16s %16s %16s %16s %16s %16s\n",
 		"graph", "n", "m", "s", "a", "triangles", "prepro (s)", "GPU copy (s)", "GPU exec (s)", "GPU total (s)", "CPU+GPU (s)");
@@ -757,7 +795,6 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	free_graph(original_graph);
 	free_graph(graph);
 
 	return EXIT_SUCCESS;

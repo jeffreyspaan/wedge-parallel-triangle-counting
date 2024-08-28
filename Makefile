@@ -6,9 +6,9 @@ CFLAGS = -funroll-loops -O3
 # CUDA
 GENCODE_FLAGS =
 NVCC = nvcc
-NVCC_FLAGS = -arch native -O3
+# NVCC_FLAGS = -arch native -O3
 # or set your own target generation:
-# NVCC_FLAGS = -gencode arch=compute_86,code=sm_86 -O3
+NVCC_FLAGS = -gencode arch=compute_86,code=sm_86 -O3
 NVCC_LIBS=
 
 # CUDA directory:
