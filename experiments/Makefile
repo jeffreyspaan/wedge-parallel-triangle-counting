@@ -1,6 +1,3 @@
-
-# GCC
-CC     = gcc
 CFLAGS = -funroll-loops -O3
 
 # CUDA
@@ -23,13 +20,19 @@ CUDA_LINK_LIBS = -lcudart
 SRCS_CUDA = $(wildcard *.cu)
 OBJS_CUDA = $(SRCS_CUDA:.cu=.o)
 
-all: edge_get
+all: edge_get tc_edge tc_vertex
 
 %.o: %.cu
-	${NVCC} ${GPU} ${NVCC_FLAGS} -dc $< -o $@ $(NVCC_LIBS)
+	${NVCC} ${NVCC_FLAGS} -dc $< -o $@ $(NVCC_LIBS)
 
 edge_get: edge_get.o
 	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ edge_get.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
 
+tc_edge: tc_edge.o
+	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_edge.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
+
+tc_vertex: tc_vertex.o
+	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_vertex.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
+
 clean: 
-	rm -f *~ $(OBJS_CUDA) edge_get
+	rm -f *~ $(OBJS_CUDA) edge_get tc_edge tc_vertex

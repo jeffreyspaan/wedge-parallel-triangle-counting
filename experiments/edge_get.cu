@@ -1,7 +1,7 @@
 /* Edge retrieval strategy experiment
  * Jeffrey Spaan, Ana-Lucia Varbanescu, Kuan Chen.
  *
- * Based on the work and code of David Bader. See https://github.com/Bader-Research/triangle-counting/ and https://doi.org/10.1109/HPEC58863.2023.10363539
+ * Built on the work and code of David Bader. See https://github.com/Bader-Research/triangle-counting/ and https://doi.org/10.1109/HPEC58863.2023.10363539
  *
  * See usage() for instructions.
  * 
@@ -32,20 +32,20 @@
 #define max2(a,b) ((a)>(b)?(a):(b))
 #define min2(a,b) ((a)<(b)?(a):(b))
 
-static struct timeval  tp;
+static struct timeval	tp;
 static struct timezone tzp;
 
-#define get_seconds()   (gettimeofday(&tp, &tzp), \
-                        (double)tp.tv_sec + (double)tp.tv_usec / 1000000.0)
+#define get_seconds()	 (gettimeofday(&tp, &tzp), \
+												(double)tp.tv_sec + (double)tp.tv_usec / 1000000.0)
 
-#define checkCudaErrors(call)                                 \
-	do {                                                        \
-		cudaError_t err = call;                                   \
-		if (err != cudaSuccess) {                                 \
-			fprintf(stderr, "CUDA error at %s %d: %s\n", __FILE__, __LINE__, \
-						 cudaGetErrorString(err));                        \
-			exit(EXIT_FAILURE);                                     \
-		}                                                         \
+#define checkCudaErrors(call)																						\
+	do {																																	\
+		cudaError_t err = call;																	 						\
+		if (err != cudaSuccess) {																 						\
+			fprintf(stderr, "CUDA error at %s %d: %s\n", __FILE__, __LINE__,	\
+						 cudaGetErrorString(err));																	\
+			exit(EXIT_FAILURE);																		 						\
+		}																												 						\
 	} while (0)
 
 typedef struct {
@@ -56,8 +56,8 @@ typedef struct {
 } GRAPH_TYPE;
 
 typedef struct {
-  UINT_t src;
-  UINT_t dst;
+	UINT_t src;
+	UINT_t dst;
 } edge_t;
 
 typedef struct {
@@ -68,12 +68,12 @@ typedef struct {
 } preprocess_vertex_t;
 
 typedef struct {
-  double copy;
-  double exec;
+	double copy;
+	double exec;
 } GPU_time;
 
 /*********
- *  GPU  *
+ *	GPU	*
  *********/
 
 __constant__ UINT_t c_binary_search_cache[BINSEARCH_CONSTANT_CACHE_SIZE];
@@ -149,7 +149,7 @@ __device__ UINT_t binary_search_closest_constant_GPU(const UINT_t *list, const U
 }
 
 typedef struct {
-  UINT_t src;
+	UINT_t src;
 } edge_src_t;
 
 __global__ void edge_get_edgelist_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const edge_t *g_edges, const UINT_t num_vertices, const UINT_t num_edges, UINT_t *g_out) {
@@ -225,14 +225,14 @@ __global__ void edge_get_binary_search_cached_GPU_kernel(const UINT_t *g_Ap, con
 }
 
 /*********
- *  CPU  *
+ *	CPU	*
  *********/
 
 static void assert_malloc(const void *ptr) {
-  if (ptr==NULL) {
-    fprintf(stderr,"ERROR: failed to allocate host memory.\n");
-    exit(EXIT_FAILURE);
-  }
+	if (ptr==NULL) {
+		fprintf(stderr,"ERROR: failed to allocate host memory.\n");
+		exit(EXIT_FAILURE);
+	}
 }
 
 void build_binary_search_cache(UINT_t *src, UINT_t *cache, UINT_t level, UINT_t max_level, UINT_t i, UINT_t s, UINT_t e) {
@@ -576,13 +576,13 @@ void edge_get_binary_search_cached_GPU(const GRAPH_TYPE *graph, GPU_time *t) {
 
 void usage() {
 	printf("Edge retrieval strategy experiment\n\n");
-  printf("Usage:\n\n");
+	printf("Usage:\n\n");
 	printf("Either one of these must be selected:\n");
-  printf(" -m <filename>   [Input graph in Matrix Market format]\n");
-  printf(" -e <filename>   [Input graph in edge list format]\n");
-  printf("Optional arguments:\n");
-  printf(" -l <num>        [Loop count]\n");
-	printf(" -z              [Input graph is zero-indexed]\n");
+	printf(" -m <filename>		[Input graph in Matrix Market format]\n");
+	printf(" -e <filename>		[Input graph in edge list format]\n");
+	printf("Optional arguments:\n");
+	printf(" -l <num>					[Loop count]\n");
+	printf(" -z								[Input graph is zero-indexed]\n");
 	printf("\n");
 	printf("Example:\n");
 	printf("./edge_get -m ../Amazon0302.mtx -l 10\n");
@@ -617,38 +617,43 @@ static int compare_vertex_degree_ascending(const void *a, const void *b) {
 
 GRAPH_TYPE *read_graph(char *filename, bool matrix_market, bool zero_indexed) {
 	FILE *infile = fopen(filename, "r");
-	GRAPH_TYPE *graph = (GRAPH_TYPE *) malloc(sizeof(GRAPH_TYPE));
-  char line[256];
+	if (infile == NULL) {
+		printf("ERROR: unable to open graph file.\n");
+		usage();
+	}
 
-  /* Skip any header lines */
-  do {
-    if (fgets(line, sizeof(line), infile) == NULL) usage();
-  } while (line[0] < '0' || line[0] > '9');
+	GRAPH_TYPE *graph = (GRAPH_TYPE *) malloc(sizeof(GRAPH_TYPE));
+	char line[256];
+
+	/* Skip any header lines */
+	do {
+		if (fgets(line, sizeof(line), infile) == NULL) usage();
+	} while (line[0] < '0' || line[0] > '9');
 
 	/* Skip line if the file is in Matrix Market format. We do not use the given vertex/edge counts. */
 	if (matrix_market) {
 		if (fgets(line, sizeof(line), infile) == NULL) usage();
 	}
 
-  UINT_t vertex_count = 0;
-  UINT_t edge_count = 0;
-  size_t size = 10240;
-  edge_t* edges = (edge_t*) malloc(size * sizeof(edge_t));
+	UINT_t vertex_count = 0;
+	UINT_t edge_count = 0;
+	size_t size = 10240;
+	edge_t* edges = (edge_t*) malloc(size * sizeof(edge_t));
 	assert_malloc(edges);
 
-  UINT_t max_vertex = 0;
-  UINT_t v, w;
+	UINT_t max_vertex = 0;
+	UINT_t v, w;
 
-  if (sscanf(line, "%d %d\n", &v, &w) == 2) {
-    do {
-      if (edge_count >= size) {
-        size += 10240;
-        edge_t *new_edges = (edge_t*) realloc(edges, size * sizeof(edge_t));
-        assert_malloc(new_edges);
-        edges = new_edges;
-      }
+	if (sscanf(line, "%d %d\n", &v, &w) == 2) {
+		do {
+			if (edge_count >= size) {
+				size += 10240;
+				edge_t *new_edges = (edge_t*) realloc(edges, size * sizeof(edge_t));
+				assert_malloc(new_edges);
+				edges = new_edges;
+			}
 
-      if ((!zero_indexed) && (v == 0 || w == 0)) {
+			if ((!zero_indexed) && (v == 0 || w == 0)) {
 				fprintf(stderr, "ERROR: zero vertex id detected but -z was not set.\n");
 				usage();
 			}
@@ -656,63 +661,63 @@ GRAPH_TYPE *read_graph(char *filename, bool matrix_market, bool zero_indexed) {
 			v -= (zero_indexed ? 0 : 1);
 			w -= (zero_indexed ? 0 : 1);
 
-      /* Remove self-loops. */
-      if (v != w) {
-        max_vertex = max2(max_vertex, max2(v, w));
+			/* Remove self-loops. */
+			if (v != w) {
+				max_vertex = max2(max_vertex, max2(v, w));
 
 				/* v->w */
-        edges[edge_count].src = v;
-        edges[edge_count].dst = w;
-        edge_count++;
+				edges[edge_count].src = v;
+				edges[edge_count].dst = w;
+				edge_count++;
 				/* w->v */
-        edges[edge_count].src = w;
-        edges[edge_count].dst = v;
-        edge_count++;
-      }
-    } while (fscanf(infile, "%d %d\n", &v, &w) == 2);
-  }
+				edges[edge_count].src = w;
+				edges[edge_count].dst = v;
+				edge_count++;
+			}
+		} while (fscanf(infile, "%d %d\n", &v, &w) == 2);
+	}
 
-  fclose(infile);
+	fclose(infile);
 
-  vertex_count = max_vertex + 1;
+	vertex_count = max_vertex + 1;
 
 	/* Sort edges (in order to remove duplicates). */
-  qsort(edges, edge_count, sizeof(edge_t), compareEdge_t);
+	qsort(edges, edge_count, sizeof(edge_t), compareEdge_t);
 
-  UINT_t *rowPtr = (UINT_t *) calloc(vertex_count+1, sizeof(UINT_t));
+	UINT_t *rowPtr = (UINT_t *) calloc(vertex_count+1, sizeof(UINT_t));
 	assert_malloc(rowPtr);
 
-  UINT_t edge_count_no_dup = 1;
+	UINT_t edge_count_no_dup = 1;
 
-  edge_t lastedge;
-  lastedge.src = edges[0].src;
-  lastedge.dst = edges[0].dst;
+	edge_t lastedge;
+	lastedge.src = edges[0].src;
+	lastedge.dst = edges[0].dst;
 
-  UINT_t *colInd = (UINT_t *) edges; /* colInd overwrites the edges array. Possible because sizeof(edge_t) > sizeof(UINT_t). */
-  colInd[0] = lastedge.dst;
-  rowPtr[lastedge.src + 1]++;
+	UINT_t *colInd = (UINT_t *) edges; /* colInd overwrites the edges array. Possible because sizeof(edge_t) > sizeof(UINT_t). */
+	colInd[0] = lastedge.dst;
+	rowPtr[lastedge.src + 1]++;
 
 	/* Remove duplicate edges. */
-  for (UINT_t i=1; i<edge_count; i++) {
-    if (compareEdge_t(&lastedge, &edges[i]) != 0) {
-      colInd[edge_count_no_dup++] = edges[i].dst;
-      rowPtr[edges[i].src + 1]++;
-      lastedge.src = edges[i].src;
-      lastedge.dst = edges[i].dst;
-    }
-  }
+	for (UINT_t i=1; i<edge_count; i++) {
+		if (compareEdge_t(&lastedge, &edges[i]) != 0) {
+			colInd[edge_count_no_dup++] = edges[i].dst;
+			rowPtr[edges[i].src + 1]++;
+			lastedge.src = edges[i].src;
+			lastedge.dst = edges[i].dst;
+		}
+	}
 
 	/* Free excess memory from the colInd/edges array. */
-  UINT_t *new_colInd = (UINT_t *) realloc(colInd, edge_count_no_dup * sizeof(UINT_t));
+	UINT_t *new_colInd = (UINT_t *) realloc(colInd, edge_count_no_dup * sizeof(UINT_t));
 
-  for (UINT_t v=1; v<=vertex_count; v++) {
-    rowPtr[v] += rowPtr[v-1];
-  }
+	for (UINT_t v=1; v<=vertex_count; v++) {
+		rowPtr[v] += rowPtr[v-1];
+	}
 
-  graph->numVertices = vertex_count;
-  graph->numEdges = edge_count_no_dup;
-  graph->rowPtr = rowPtr;
-  graph->colInd = new_colInd;
+	graph->numVertices = vertex_count;
+	graph->numEdges = edge_count_no_dup;
+	graph->rowPtr = rowPtr;
+	graph->colInd = new_colInd;
 
 	return graph;
 }
@@ -830,7 +835,7 @@ int main(int argc, char **argv) {
 	UINT_t loop_cnt = 1;
 
 	while ((argc > 1) && (argv[1][0] == '-')) {
-    switch (argv[1][1]) {
+		switch (argv[1][1]) {
 			case 'm':
 				graph_mm = true;
 			case 'e':

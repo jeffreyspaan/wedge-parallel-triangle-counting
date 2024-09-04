@@ -1,6 +1,3 @@
-
-# GCC
-CC     = gcc
 CFLAGS = -funroll-loops -O3
 
 # CUDA
