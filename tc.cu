@@ -7,9 +7,10 @@
  * 
  * Assumptions:
  *	- Target GPU is device 0.
- *	- Number of vertices < (uint32_t max / 2).
- *	- Number of edges < uint32_t max.
- *	- Number of wedges < uint64_t max.
+ *	- Number of vertices < (uint32_max / 2).
+ *	- Number of edges < (uint32_max / 2).
+ *	- Number of wedges < (2^31 - 1) * 128 * spread.
+ * 	- Max degree (after preprocessing) < sqrt(uint32_max)
  */
 
 #include <stdio.h>
@@ -85,7 +86,7 @@ typedef struct {
 __constant__ ULONG_t c_binary_search_cache[BINSEARCH_CONSTANT_CACHE_SIZE];
 #endif
 
-__device__ INT_t linearSearch_GPU(const UINT_t* list, const UINT_t start, const UINT_t end, const UINT_t target) {
+__device__ INT_t linear_search_GPU(const UINT_t* list, const UINT_t start, const UINT_t end, const UINT_t target) {
 	for (UINT_t i=start; i<end; i++) {
 		if (list[i] == target) {
 			return i;
@@ -97,7 +98,7 @@ __device__ INT_t linearSearch_GPU(const UINT_t* list, const UINT_t start, const 
 	return -1;
 }
 
-__device__ INT_t binarySearch_GPU(const UINT_t* list, const UINT_t start, const UINT_t end, const UINT_t target) {
+__device__ INT_t binary_search_GPU(const UINT_t* list, const UINT_t start, const UINT_t end, const UINT_t target) {
 	UINT_t s=start, e=end, mid;
 	while (s < e) {
 		mid = (s + e) >> 1;
@@ -113,7 +114,7 @@ __device__ INT_t binarySearch_GPU(const UINT_t* list, const UINT_t start, const 
 }
 
 
-__device__ UINT_t binarySearch_closest_ULONG_GPU(const ULONG_t* list, const UINT_t start, const UINT_t end, const ULONG_t target) {
+__device__ UINT_t binary_search_closest_ULONG_GPU(const ULONG_t* list, const UINT_t start, const UINT_t end, const ULONG_t target) {
 	/* Finds the index of the rightmost closest value smaller or equal than target, e.g.,
 	 * for target 1 and list=[0,0,0,2,2,2] it returns 2,
 	 * for target 2 and list=[0,0,0,2,2,2] it returns 5.
@@ -136,7 +137,7 @@ __device__ UINT_t binarySearch_closest_ULONG_GPU(const ULONG_t* list, const UINT
 }
 
 #if BINSEARCH_CONSTANT
-__device__ UINT_t binarySearch_closest_ULONG_constant_GPU(const ULONG_t *list, const UINT_t start, const UINT_t end, const ULONG_t target) {
+__device__ UINT_t binary_search_closest_ULONG_constant_GPU(const ULONG_t *list, const UINT_t start, const UINT_t end, const ULONG_t target) {
 	/* Finds the index of the rightmost closest value smaller or equal than target.
 	 * Uses constant memory for the first BINSEARCH_CONSTANT_LEVELS levels.
 	 */
@@ -165,7 +166,7 @@ __device__ UINT_t binarySearch_closest_ULONG_constant_GPU(const ULONG_t *list, c
 	}
 
 	g_s = max2(start, (g_s > 0) ? g_s-1 : 0);
-	return binarySearch_closest_ULONG_GPU(list, g_s, g_e, target);
+	return binary_search_closest_ULONG_GPU(list, g_s, g_e, target);
 }
 #endif
 
@@ -194,9 +195,9 @@ __global__ void tc_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const ULON
 		if (i == i_start) {
 			/* First wedge. */
 #if BINSEARCH_CONSTANT
-			v = binarySearch_closest_ULONG_constant_GPU(g_wedgeSum, 0, num_vertices, i_start);
+			v = binary_search_closest_ULONG_constant_GPU(g_wedgeSum, 0, num_vertices, i_start);
 #else
-			v = binarySearch_closest_ULONG_GPU(g_wedgeSum, 0, num_vertices, i_start);
+			v = binary_search_closest_ULONG_GPU(g_wedgeSum, 0, num_vertices, i_start);
 #endif
 
 			vb = g_Ap[v];
@@ -274,11 +275,11 @@ __global__ void tc_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const ULON
 			UINT_t we = g_Ap[w+1];
 
 			if (we-wb < 2) {
-				if (linearSearch_GPU(g_Ai, wb, we, u) >= 0) {
+				if (linear_search_GPU(g_Ai, wb, we, u) >= 0) {
 					atomicAdd_block(shared_count, 1);
 				}
 			} else {
-				if (binarySearch_GPU(g_Ai, wb, we, u) >= 0) {
+				if (binary_search_GPU(g_Ai, wb, we, u) >= 0) {
 					atomicAdd_block(shared_count, 1);
 				}
 			}
@@ -393,7 +394,7 @@ ULONG_t tc_GPU(const GRAPH_TYPE *graph, UINT_t spread, UINT_t adjacency_matrix_l
 	UINT_t num_threads = 128;
 	ULONG_t num_blocks = (wedgeSum_total / (spread * num_threads)) + 1;
 
-	if (num_blocks > (((ULONG_t) 1 << 31)-1)*num_threads) {
+	if (num_blocks > (((ULONG_t) 1 << 31)-1)) {
 		fprintf(stderr, "ERROR: maximum grid size reached.\n");
 		exit(EXIT_FAILURE);
 	}

@@ -1,4 +1,4 @@
-/* Vertex-parallel Triangle Counting
+/* Wedge-Parallel Triangle Counting with reordering and spread
  * Jeffrey Spaan, Ana-Lucia Varbanescu, Kuan Chen.
  *
  * Built on the work and code of David Bader. See https://github.com/Bader-Research/triangle-counting/ and https://doi.org/10.1109/HPEC58863.2023.10363539
@@ -8,9 +8,8 @@
  * Assumptions:
  *	- Target GPU is device 0.
  *	- Number of vertices < (uint32_max / 2).
- *	- Number of edges < (uint32_max / 2).
+ *	- Number of edges < (uint32__max / 2).
  *	- Number of wedges < (2^31 - 1) * 128 * spread.
- * 	- Max degree (after preprocessing) < sqrt(uint32_max)
  */
 
 #include <stdio.h>
@@ -27,7 +26,12 @@
 #include <cooperative_groups/reduce.h>
 namespace cg = cooperative_groups;
 
+#define CHECK_BOUNDS 1
 #define RESET_DEVICE 0
+#define BINSEARCH_CONSTANT 1
+
+#define BINSEARCH_CONSTANT_LEVELS 12
+#define BINSEARCH_CONSTANT_CACHE_SIZE ((1 << BINSEARCH_CONSTANT_LEVELS) - 1) // 2^levels - 1
 
 #define UINT_t uint32_t
 #define INT_t int32_t
@@ -53,8 +57,6 @@ static struct timezone tzp;
 	} while (0)
 
 enum preprocess_t { PREPROCESS_CPU = 0, PREPROCESS_GPU, PREPROCESS_GPU_CONSTRAINED};
-
-enum wedge_style_t { WEDGE_STYLE_OUTGOING = 0, WEDGE_STYLE_ARROW, WEDGE_STYLE_MIXED};
 
 typedef struct {
 	UINT_t numVertices;
@@ -83,6 +85,10 @@ typedef struct {
  *	GPU	*
  *********/
 
+#if BINSEARCH_CONSTANT
+__constant__ ULONG_t c_binary_search_cache[BINSEARCH_CONSTANT_CACHE_SIZE];
+#endif
+
 __device__ INT_t linearSearch_GPU(const UINT_t* list, const UINT_t start, const UINT_t end, const UINT_t target) {
 	for (UINT_t i=start; i<end; i++) {
 		if (list[i] == target) {
@@ -95,7 +101,7 @@ __device__ INT_t linearSearch_GPU(const UINT_t* list, const UINT_t start, const 
 	return -1;
 }
 
-__device__ INT_t binary_search_GPU(const UINT_t* list, const UINT_t start, const UINT_t end, const UINT_t target) {
+__device__ INT_t binarySearch_GPU(const UINT_t* list, const UINT_t start, const UINT_t end, const UINT_t target) {
 	UINT_t s=start, e=end, mid;
 	while (s < e) {
 		mid = (s + e) >> 1;
@@ -110,156 +116,138 @@ __device__ INT_t binary_search_GPU(const UINT_t* list, const UINT_t start, const
 	return -1;
 }
 
-__global__ void tc_vertex_outgoing_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const UINT_t num_vertices, ULONG_t *g_total_count, const UINT_t *g_adjacency_matrix, const UINT_t adjacency_matrix_len, const ULONG_t adjacency_matrix_size) {
-	const UINT_t v = blockIdx.x * blockDim.x + threadIdx.x;
-	ULONG_t count = 0;
 
-	if (v < num_vertices) {
-		UINT_t vb = g_Ap[v];
-		UINT_t ve = g_Ap[v+1];
+__device__ UINT_t binarySearch_closest_ULONG_GPU(const ULONG_t* list, const UINT_t start, const UINT_t end, const ULONG_t target) {
+	/* Finds the index of the rightmost closest value smaller or equal than target, e.g.,
+	 * for target 1 and list=[0,0,0,2,2,2] it returns 2,
+	 * for target 2 and list=[0,0,0,2,2,2] it returns 5.
+	 * Assumes list[0]=0
+	 * Assumes end-1 <= UINT_MAX/2
+	 */
 
-		for (UINT_t i=vb; i<ve; i++) {
-			UINT_t w = g_Ai[i];
-			UINT_t wb = g_Ap[w];
-			UINT_t we = g_Ap[w+1];
+	UINT_t s=start, e=end, mid;
+	while (s < e) {
+		mid = (s + e) >> 1;
 
-			for (UINT_t j=i+1; j<ve; j++) {
-				UINT_t u = g_Ai[j];
+		if (list[mid] < target+1) {
+			s = mid + 1;
+		} else {
+			e = mid;
+		}
+	}
+	
+	return max2(start, (s > 0) ? s-1 : 0);
+}
 
-				if (w >= (max2(num_vertices, adjacency_matrix_len) - adjacency_matrix_len)) {
-					ULONG_t adjacency_i = (adjacency_matrix_size - (((ULONG_t) (num_vertices-w) * (ULONG_t) ((num_vertices-w)-1)) >> 1)) + u - w - 1;
+#if BINSEARCH_CONSTANT
+__device__ UINT_t binarySearch_closest_ULONG_constant_GPU(const ULONG_t *list, const UINT_t start, const UINT_t end, const ULONG_t target) {
+	/* Finds the index of the rightmost closest value smaller or equal than target.
+	 * Uses constant memory for the first BINSEARCH_CONSTANT_LEVELS levels.
+	 */
+	ULONG_t mid;
 
-#if UINT_WIDTH == 32
-					bool found = (g_adjacency_matrix[adjacency_i >> 5] & (1 << (adjacency_i & 31))) > 0;
-#else
-					bool found = (g_adjacency_matrix[adjacency_i / UINT_WIDTH] & (1 << (adjacency_i % UINT_WIDTH))) > 0;
-#endif
-					if (found) {
-						count++;
-					}
-				} else {
-					if (binary_search_GPU(g_Ai, wb, we, u) >= 0) {
-						count++;
-					}
-				}
-			}
+	UINT_t g_s = start;
+	UINT_t g_e = end;
+	UINT_t g_mid;
+
+	UINT_t c_index = 0;
+
+	#pragma unroll
+	for (UINT_t iter=0; iter<BINSEARCH_CONSTANT_LEVELS; iter++) {
+		mid = c_binary_search_cache[c_index];
+		g_mid = (g_s+g_e) >> 1;
+
+		c_index *= 2;
+		c_index += 1;
+
+		if (mid < target+1) {
+			c_index += 1;
+			g_s = g_mid+1;
+		} else {
+			g_e = g_mid;
 		}
 	}
 
-	cg::thread_block_tile<32> tile32 = cg::tiled_partition<32>(cg::this_thread_block());
-
-	for (UINT_t i = tile32.size() / 2; i > 0; i /= 2) {
-		count += tile32.shfl_down(count, i);
-	}
-
-	if (tile32.thread_rank() == 0) atomicAdd((unsigned long long int *) g_total_count, count);
+	g_s = max2(start, (g_s > 0) ? g_s-1 : 0);
+	return binarySearch_closest_ULONG_GPU(list, g_s, g_e, target);
 }
-
-__global__ void tc_vertex_arrow_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const UINT_t num_vertices, ULONG_t *g_total_count, const UINT_t *g_adjacency_matrix, const UINT_t adjacency_matrix_len, const ULONG_t adjacency_matrix_size) {
-	const UINT_t v = blockIdx.x * blockDim.x + threadIdx.x;
-	ULONG_t count = 0;
-
-	if (v < num_vertices) {
-		UINT_t vb = g_Ap[v];
-		UINT_t ve = g_Ap[v+1];
-
-		for (UINT_t i=vb; i<ve; i++) {
-			UINT_t w = g_Ai[i];
-			UINT_t wb = g_Ap[w];
-			UINT_t we = g_Ap[w+1];		
-
-			for (UINT_t j=wb; j<we; j++) {
-				UINT_t u = g_Ai[j];
-
-				if (v >= (max2(num_vertices, adjacency_matrix_len) - adjacency_matrix_len)) {
-					ULONG_t adjacency_i = (adjacency_matrix_size - (((ULONG_t) (num_vertices-v) * (ULONG_t) ((num_vertices-v)-1)) >> 1)) + u - v - 1;
-
-#if UINT_WIDTH == 32
-					bool found = (g_adjacency_matrix[adjacency_i >> 5] & (1 << (adjacency_i & 31))) > 0;
-#else
-					bool found = (g_adjacency_matrix[adjacency_i / UINT_WIDTH] & (1 << (adjacency_i % UINT_WIDTH))) > 0;
 #endif
-					if (found) {
-						count++;
-					}
-				} else {
-					/* Note: in general, searching from vb seems to be faster than from tid+1. */
-					if (binary_search_GPU(g_Ai, vb, ve, u) >= 0) {
-						count++;
-					}
-				}
+
+__global__ void tc_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const ULONG_t *g_wedgeSum, const ULONG_t wedgeSum_total, const UINT_t num_vertices, ULONG_t *g_total_count, const UINT_t spread) {
+	const ULONG_t i_start = ((ULONG_t) blockIdx.x * blockDim.x + threadIdx.x) * spread;
+	UINT_t count = 0;
+
+	UINT_t v;
+	UINT_t w;
+	UINT_t u;
+	UINT_t vb;				// Start index of adj(v)
+	UINT_t ve;				// End index of adj(v)
+	UINT_t d_v;				// Degree of v
+	UINT_t w_i;				// Index of w in adj(v)
+	UINT_t u_i;				// Index of u in adj(v)
+	UINT_t wedges;		// Number of wedges of v
+	UINT_t i_v;				// Index of current wedge in wedges(v) (i.e., 0...(d_v*(d_v-1)/2)-1)
+
+	for (ULONG_t i=i_start; i<min2(i_start+spread, wedgeSum_total); i++, i_v++) {
+		if (i == i_start) {
+			/* First wedge. */
+#if BINSEARCH_CONSTANT
+			v = binarySearch_closest_ULONG_constant_GPU(g_wedgeSum, 0, num_vertices, i_start);
+#else
+			v = binarySearch_closest_ULONG_GPU(g_wedgeSum, 0, num_vertices, i_start);
+#endif
+
+			vb = g_Ap[v];
+			ve = g_Ap[v+1];
+			d_v = ve - vb;
+			wedges = (d_v*(d_v-1)) >> 1;
+			i_v = i_start - g_wedgeSum[v];
+
+			/* Known formulas to create cartesian indices for a (d_v,d_v) (top right) triangular matrix from a linear index. */
+			/* Note: not tested for limits. Uses UINT_t cast instead of floor(). */
+			w_i = d_v - 2 - (UINT_t) (sqrt((double (wedges-i_v) - 0.875) * 2) - 0.5);
+			u_i = i_v + w_i + 1 - wedges + (((d_v-w_i)*((d_v-w_i)-1)) >> 1);
+
+			w = g_Ai[vb + w_i];
+		} else if (i_v >= wedges) {
+			/* Next wedge, new vertex (new v,w,u). */
+			do {
+				v++;
+				vb = ve;
+				ve = g_Ap[v+1];
+				d_v = ve-vb;
+			} while (d_v < 2);
+
+			wedges = (d_v*(d_v-1)) >> 1;
+			i_v = 0;
+			w_i = 0;
+			u_i = 1;
+
+			w = g_Ai[vb];
+		} else {
+			/* Next wedge, same row (new u). */
+			u_i++;
+
+			if (u_i >= d_v) {
+				/* Next wedge, next row (new w,u). */
+				w_i++;
+				u_i = w_i+1;
+				w = g_Ai[vb + w_i];
 			}
 		}
-	}
 
-	cg::thread_block_tile<32> tile32 = cg::tiled_partition<32>(cg::this_thread_block());
+		u = g_Ai[vb + u_i];
 
-	for (UINT_t i = tile32.size() / 2; i > 0; i /= 2) {
-		count += tile32.shfl_down(count, i);
-	}
+		UINT_t wb = g_Ap[w];
+		UINT_t we = g_Ap[w+1];
 
-	if (tile32.thread_rank() == 0) atomicAdd((unsigned long long int *) g_total_count, count);
-}
-
-__global__ void tc_vertex_mixed_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const UINT_t num_vertices, ULONG_t *g_total_count, const UINT_t *g_adjacency_matrix, const UINT_t adjacency_matrix_len, const ULONG_t adjacency_matrix_size) {
-	const UINT_t v = blockIdx.x * blockDim.x + threadIdx.x;
-	ULONG_t count = 0;
-
-	if (v < num_vertices) {
-		UINT_t vb = g_Ap[v];
-		UINT_t ve = g_Ap[v+1];
-
-		for (UINT_t i=vb; i<ve; i++) {
-			UINT_t w = g_Ai[i];
-			UINT_t wb = g_Ap[w];
-			UINT_t we = g_Ap[w+1];
-
-			UINT_t size_v = ve-(i+1);
-			UINT_t size_w = we-wb;
-			
-			if (size_v <= size_w) {
-				for (UINT_t j=i+1; j<ve; j++) {
-					UINT_t u = g_Ai[j];
-
-					if (w >= (max2(num_vertices, adjacency_matrix_len) - adjacency_matrix_len)) {
-						ULONG_t adjacency_i = (adjacency_matrix_size - (((ULONG_t) (num_vertices-w) * (ULONG_t) ((num_vertices-w)-1)) >> 1)) + u - w - 1;
-
-#if UINT_WIDTH == 32
-						bool found = (g_adjacency_matrix[adjacency_i >> 5] & (1 << (adjacency_i & 31))) > 0;
-#else
-						bool found = (g_adjacency_matrix[adjacency_i / UINT_WIDTH] & (1 << (adjacency_i % UINT_WIDTH))) > 0;
-#endif
-						if (found) {
-							count++;
-						}
-					} else {
-						if (binary_search_GPU(g_Ai, wb, we, u) >= 0) {
-							count++;
-						}
-					}
-				}
-				
-			} else {
-				for (UINT_t j=wb; j<we; j++) {
-					UINT_t u = g_Ai[j];
-
-					if (v >= (max2(num_vertices, adjacency_matrix_len) - adjacency_matrix_len)) {
-						ULONG_t adjacency_i = (adjacency_matrix_size - (((ULONG_t) (num_vertices-v) * (ULONG_t) ((num_vertices-v)-1)) >> 1)) + u - v - 1;
-
-#if UINT_WIDTH == 32
-						bool found = (g_adjacency_matrix[adjacency_i >> 5] & (1 << (adjacency_i & 31))) > 0;
-#else
-						bool found = (g_adjacency_matrix[adjacency_i / UINT_WIDTH] & (1 << (adjacency_i % UINT_WIDTH))) > 0;
-#endif
-						if (found) {
-							count++;
-						}
-					} else {
-						if (binary_search_GPU(g_Ai, i+1, ve, u) >= 0) {
-							count++;
-						}
-					}
-				}
+		if (we-wb < 2) {
+			if (linearSearch_GPU(g_Ai, wb, we, u) >= 0) {
+				count++;
+			}
+		} else {
+			if (binarySearch_GPU(g_Ai, wb, we, u) >= 0) {
+				count++;
 			}
 		}
 	}
@@ -284,10 +272,19 @@ static void assert_malloc(const void *ptr) {
 	}
 }
 
-ULONG_t tc_vertex_GPU(const GRAPH_TYPE *graph, UINT_t adjacency_matrix_len, wedge_style_t style, GPU_time *t) {
+void build_binary_search_cache(ULONG_t *src, ULONG_t *cache, UINT_t level, UINT_t max_level, UINT_t i, UINT_t s, UINT_t e) {
+	if (level < max_level) {
+		UINT_t mid = (s + e) / 2;
+		cache[i] = src[mid];
+		build_binary_search_cache(src, cache, level+1, max_level, i*2 + 1, s, mid);
+		build_binary_search_cache(src, cache, level+1, max_level, i*2 + 2, mid+1, e);
+	}
+}
+
+ULONG_t tc_GPU(const GRAPH_TYPE *graph, UINT_t spread, GPU_time *t) {
 	UINT_t *d_Ap;
 	UINT_t *d_Ai;
-	UINT_t *d_adjacency_matrix;
+	ULONG_t *d_wedgeSum;
 	ULONG_t *d_total_count;
 
 	cudaEvent_t GPU_copy_start, GPU_copy_stop, GPU_exec_start, GPU_exec_stop;
@@ -297,35 +294,42 @@ ULONG_t tc_vertex_GPU(const GRAPH_TYPE *graph, UINT_t adjacency_matrix_len, wedg
 	checkCudaErrors(cudaEventCreate(&GPU_exec_start));
 	checkCudaErrors(cudaEventCreate(&GPU_exec_stop));
 
-	/* Store all existing edges of the vertices from n-adjacency_matrix_len to n in an upper triangluar adjacency matrix. */
-	ULONG_t adjacency_matrix_size = (((ULONG_t) adjacency_matrix_len) * ((ULONG_t) adjacency_matrix_len - 1)) / 2;
-	UINT_t *h_adjacency_matrix = (UINT_t *) calloc(adjacency_matrix_size/UINT_WIDTH, sizeof(UINT_t));
-	assert_malloc(h_adjacency_matrix);
+	ULONG_t *h_wedgeSum = (ULONG_t *) malloc((graph->numVertices + 1) * sizeof(ULONG_t));
+	assert_malloc(h_wedgeSum);
+	h_wedgeSum[0] = 0;
 
-	for (UINT_t v=graph->numVertices - min2(graph->numVertices, adjacency_matrix_len); v<graph->numVertices; v++) {
-		for (UINT_t i=graph->rowPtr[v]; i<graph->rowPtr[v+1]; i++) {
-			UINT_t w = graph->colInd[i];
-
-			ULONG_t adjacency_i = (adjacency_matrix_size - (((ULONG_t) (graph->numVertices-v) * (ULONG_t) ((graph->numVertices-v)-1)) / 2)) + w - v - 1;
-
-#if UINT_WIDTH == 32
-			h_adjacency_matrix[adjacency_i >> 5] |= (1 << (adjacency_i & 31));
-#else
-			h_adjacency_matrix[adjacency_i / UINT_WIDTH] |= (1 << (adjacency_i % UINT_WIDTH));
-#endif
+	for (UINT_t v=0; v<graph->numVertices; v++) {
+		UINT_t d_v = graph->rowPtr[(v+1)] - graph->rowPtr[v];
+		if (d_v < 2) {
+			h_wedgeSum[v+1] = h_wedgeSum[v];
+		} else {
+			h_wedgeSum[v+1] = h_wedgeSum[v] + ((d_v*(d_v-1))/2);
 		}
 	}
+
+	ULONG_t wedgeSum_total = h_wedgeSum[graph->numVertices];
+	// printf("wedgeSum_total=%lu\n", wedgeSum_total);
+
+#if BINSEARCH_CONSTANT
+	ULONG_t *h_wedgeSum_cache = (ULONG_t *) malloc(BINSEARCH_CONSTANT_CACHE_SIZE * sizeof(ULONG_t));
+	assert_malloc(h_wedgeSum_cache);
+	build_binary_search_cache(h_wedgeSum, h_wedgeSum_cache, 0, BINSEARCH_CONSTANT_LEVELS, 0, 0, graph->numVertices);
+#endif
 
 	checkCudaErrors(cudaEventRecord(GPU_copy_start));
 
 	checkCudaErrors(cudaMalloc((void **)&d_Ap, (graph->numVertices + 1) * sizeof(UINT_t)));
 	checkCudaErrors(cudaMalloc((void **)&d_Ai, graph->numEdges * sizeof(UINT_t)));
-	checkCudaErrors(cudaMalloc((void **)&d_adjacency_matrix, (adjacency_matrix_size/32) * sizeof(UINT_t)));
+	checkCudaErrors(cudaMalloc((void **)&d_wedgeSum, (graph->numVertices+1) * sizeof(ULONG_t)));
 	checkCudaErrors(cudaMalloc((void **)&d_total_count, 1 * sizeof(ULONG_t)));
 
 	checkCudaErrors(cudaMemcpy(d_Ap, graph->rowPtr, (graph->numVertices + 1) * sizeof(UINT_t), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_Ai, graph->colInd, graph->numEdges * sizeof(UINT_t), cudaMemcpyHostToDevice));
-	checkCudaErrors(cudaMemcpy(d_adjacency_matrix, h_adjacency_matrix, (adjacency_matrix_size/32) * sizeof(UINT_t), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpy(d_wedgeSum, h_wedgeSum, (graph->numVertices+1) * sizeof(ULONG_t), cudaMemcpyHostToDevice));
+	
+#if BINSEARCH_CONSTANT
+	checkCudaErrors(cudaMemcpyToSymbol(c_binary_search_cache, h_wedgeSum_cache, BINSEARCH_CONSTANT_CACHE_SIZE * sizeof(ULONG_t)));
+#endif
 
 	checkCudaErrors(cudaMemset(d_total_count, 0, 1 * sizeof(ULONG_t)));
 
@@ -334,8 +338,8 @@ ULONG_t tc_vertex_GPU(const GRAPH_TYPE *graph, UINT_t adjacency_matrix_len, wedg
 	checkCudaErrors(cudaEventElapsedTime(&GPU_copy_elapsed, GPU_copy_start, GPU_copy_stop));
 	t->copy += GPU_copy_elapsed;
 
-	UINT_t num_threads = 64;
-	ULONG_t num_blocks = (graph->numVertices / num_threads) + 1;
+	UINT_t num_threads = 128;
+	ULONG_t num_blocks = (wedgeSum_total / (spread * num_threads)) + 1;
 
 	if (num_blocks > (((ULONG_t) 1 << 31)-1)) {
 		fprintf(stderr, "ERROR: maximum grid size reached.\n");
@@ -347,12 +351,7 @@ ULONG_t tc_vertex_GPU(const GRAPH_TYPE *graph, UINT_t adjacency_matrix_len, wedg
 
 	checkCudaErrors(cudaEventRecord(GPU_exec_start));
 
-	if (style == WEDGE_STYLE_OUTGOING)
-		tc_vertex_outgoing_GPU_kernel<<<grid, threads>>>(d_Ap, d_Ai, graph->numVertices, d_total_count, d_adjacency_matrix, adjacency_matrix_len, adjacency_matrix_size);
-	else if (style == WEDGE_STYLE_ARROW)
-		tc_vertex_arrow_GPU_kernel<<<grid, threads>>>(d_Ap, d_Ai, graph->numVertices, d_total_count, d_adjacency_matrix, adjacency_matrix_len, adjacency_matrix_size);
-	else if (style == WEDGE_STYLE_MIXED)
-		tc_vertex_mixed_GPU_kernel<<<grid, threads>>>(d_Ap, d_Ai, graph->numVertices, d_total_count, d_adjacency_matrix, adjacency_matrix_len, adjacency_matrix_size);
+	tc_GPU_kernel<<<grid, threads>>>(d_Ap, d_Ai, d_wedgeSum, wedgeSum_total, graph->numVertices, d_total_count, spread);
 
 	checkCudaErrors(cudaEventRecord(GPU_exec_stop));
 	checkCudaErrors(cudaEventSynchronize(GPU_exec_stop));
@@ -364,7 +363,7 @@ ULONG_t tc_vertex_GPU(const GRAPH_TYPE *graph, UINT_t adjacency_matrix_len, wedg
 
 	checkCudaErrors(cudaFree(d_Ap));
 	checkCudaErrors(cudaFree(d_Ai));
-	checkCudaErrors(cudaFree(d_adjacency_matrix));
+	checkCudaErrors(cudaFree(d_wedgeSum));
 	checkCudaErrors(cudaFree(d_total_count));
 
 	checkCudaErrors(cudaEventDestroy(GPU_copy_start));
@@ -372,7 +371,11 @@ ULONG_t tc_vertex_GPU(const GRAPH_TYPE *graph, UINT_t adjacency_matrix_len, wedg
 	checkCudaErrors(cudaEventDestroy(GPU_exec_start));
 	checkCudaErrors(cudaEventDestroy(GPU_exec_stop));
 
-	free(h_adjacency_matrix);
+	free(h_wedgeSum);
+
+#if BINSEARCH_CONSTANT
+	free(h_wedgeSum_cache);
+#endif
 	
 #if RESET_DEVICE
 	checkCudaErrors(cudaDeviceReset());
@@ -381,24 +384,23 @@ ULONG_t tc_vertex_GPU(const GRAPH_TYPE *graph, UINT_t adjacency_matrix_len, wedg
 }
 
 void usage() {
-	printf("Vertex-parallel Triangle Counting\n\n");
+	printf("Wedge Parallel Triangle Counting\n\n");
 	printf("Usage:\n\n");
 	printf("Either one of these must be selected:\n");
 	printf(" -m <filename>	[Input graph in Matrix Market format]\n");
 	printf(" -e <filename>	[Input graph in edge list format]\n");
 	printf("Required arguments:\n");
+	printf(" -s <num>		 	 	[Spread, a.k.a. wedges/thread]\n");
 	printf(" -a <num>				[Adjacency matrix length] (must be divisble by 32)\n");
 	printf("Optional arguments:\n");
-	printf(" -w <num>				[Wedge style, 0:outgoing (default), 1:arrow, 2:mixed]\n");
 	printf(" -l <num>				[Loop count]\n");
 	printf(" -z							[Input graph is zero-indexed]\n");
 	printf(" -p							[Preprocessing style, 0:CPU, 1:GPU, 2:GPU low-memory (default)]\n");
 	printf("\n");
 	printf("Example:\n");
-	printf("./tc_vertex -m ../Amazon0302.mtx -a 8192 -l 10\n");
+	printf("./tc_spread -m Amazon0302.mtx -s 5 -l 10\n");
 	exit(EXIT_FAILURE);
 }
-
 
 static int compareInt_t(const void *a, const void *b) {
 	UINT_t arg1 = *(const UINT_t *)a;
@@ -763,8 +765,7 @@ int main(int argc, char **argv) {
 	/* Default: use lightweight GPU-based preprocessing (worst case ~ m*8 device memory). */
 	preprocess_t preprocess_style = PREPROCESS_GPU_CONSTRAINED;
 
-	wedge_style_t style = WEDGE_STYLE_OUTGOING;
-	UINT_t adjacency_matrix_len = 0;
+	UINT_t spread = 0;
 
 	while ((argc > 1) && (argv[1][0] == '-')) {
 		switch (argv[1][1]) {
@@ -782,24 +783,10 @@ int main(int argc, char **argv) {
 				argv++;
 				argc--;
 				break;
-			case 'w':
+			case 's':
 				if (argc < 3) usage();
-				if (atoi(argv[2]) < WEDGE_STYLE_OUTGOING || atoi(argv[2]) > WEDGE_STYLE_MIXED) usage();
-				style = (wedge_style_t) atoi(argv[2]);
-				argv+=2;
-				argc-=2;
-				break;
-			case 'a':
-				/* Adjacency matrix lengths:
-				 *	 8192 ~= 4MiB
-				 *	 16384 ~= 16MiB
-				 *	 32768 ~= 64MiB
-				 *	 65536 ~= 265MiB
-				 *	 131072 ~= 1024MiB
-				 */
-				if (argc < 3) usage();
-				adjacency_matrix_len = atoi(argv[2]);
-				if (adjacency_matrix_len % 32 != 0) usage();
+				spread = atoi(argv[2]);
+				if (spread <= 0) usage();
 				argv+=2;
 				argc-=2;
 				break;
@@ -819,7 +806,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	if (graph_filename == NULL) usage();
+	if (graph_filename == NULL || spread == 0) usage();
 
 	GRAPH_TYPE *original_graph = read_graph(graph_filename, graph_mm, graph_zero_indexed, preprocess_style);
 	double t_preprocessing = get_seconds();
@@ -827,8 +814,8 @@ int main(int argc, char **argv) {
 	t_preprocessing = get_seconds() - t_preprocessing;
 	free_graph(original_graph);
 
-	printf("%-60s %16s %16s %16s %16s %16s %16s %16s %16s %16s %16s\n",
-		"graph", "n", "m", "a", "wedge style", "triangles", "prepro (s)", "GPU copy (s)", "GPU exec (s)", "GPU total (s)", "CPU+GPU (s)");
+	printf("%-60s %16s %16s %16s %16s %16s %16s %16s %16s %16s\n",
+		"graph", "n", "m", "s", "triangles", "prepro (s)", "GPU copy (s)", "GPU exec (s)", "GPU total (s)", "CPU+GPU (s)");
 
 	bool warmed_up = false;
 
@@ -836,7 +823,7 @@ int main(int argc, char **argv) {
 		double t_cpu = get_seconds();
 		GPU_time t_gpu = { .copy=0.0, .exec=0.0 };
 
-		ULONG_t triangles = tc_vertex_GPU(graph, adjacency_matrix_len, style, &t_gpu);
+		ULONG_t triangles = tc_GPU(graph, spread, &t_gpu);
 
 		t_cpu = get_seconds() - t_cpu;
 
@@ -844,9 +831,8 @@ int main(int argc, char **argv) {
 		t_gpu.exec /= (double) 1000;
 
 		if (warmed_up) {
-			const char *style_str = (style == WEDGE_STYLE_ARROW) ? "arrow" : ((style == WEDGE_STYLE_MIXED) ? "mixed" : "outgoing");
-			printf("%-60s %16d %16d %16d %16s %16lu %16.6f %16.6f %16.6f %16.6f %16.6f\n",
-				graph_filename, graph->numVertices, graph->numEdges, adjacency_matrix_len, style_str, triangles, t_preprocessing, t_gpu.copy, t_gpu.exec, t_gpu.copy + t_gpu.exec, t_cpu);
+			printf("%-60s %16d %16d %16d %16lu %16.6f %16.6f %16.6f %16.6f %16.6f\n",
+				graph_filename, graph->numVertices, graph->numEdges, spread, triangles, t_preprocessing, t_gpu.copy, t_gpu.exec, t_gpu.copy + t_gpu.exec, t_cpu);
 		} else {
 			warmed_up = true;
 		}

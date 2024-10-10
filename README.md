@@ -3,7 +3,7 @@ See [...]
 
 ## Requirements
 
-CUDA (tested on 12.4), gcc
+CUDA (tested on 12.4), cub (part of [CCCL](https://github.com/nvidia/cccl)) (included in the CUDA Toolkit), a c++ compiler.
 
 ## Compile & run
 

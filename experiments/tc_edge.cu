@@ -7,9 +7,9 @@
  * 
  * Assumptions:
  *	- Target GPU is device 0.
- *	- Number of vertices < (uint32_t max / 2).
- *	- Number of edges < uint32_t max.
- *	- Number of wedges < uint64_t max.
+ *	- Number of vertices < (uint32_max / 2).
+ *	- Number of edges < (uint32__max / 2).
+ *	- Number of wedges < (2^31 - 1) * 128 * spread.
  */
 
 #include <stdio.h>
@@ -433,7 +433,7 @@ ULONG_t tc_edge_GPU(const GRAPH_TYPE *graph, UINT_t adjacency_matrix_len, wedge_
 	UINT_t num_threads = 128;
 	ULONG_t num_blocks = (graph->numEdges / num_threads) + 1;
 
-	if (num_blocks > (((ULONG_t) 1 << 31)-1)*num_threads) {
+	if (num_blocks > (((ULONG_t) 1 << 31)-1)) {
 		fprintf(stderr, "ERROR: maximum grid size reached.\n");
 		exit(EXIT_FAILURE);
 	}
