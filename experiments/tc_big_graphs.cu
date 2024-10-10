@@ -1,5 +1,5 @@
 /* Wedge-Parallel Triangle Counting for big graphs
- * Jeffrey Spaan, Ana-Lucia Varbanescu, Kuan Chen.
+ * Jeffrey Spaan, Kuan-Hsun Chen, David Bader, Ana-Lucia Varbanescu
  *
  * Built on the work and code of David Bader. See https://github.com/Bader-Research/triangle-counting/ and https://doi.org/10.1109/HPEC58863.2023.10363539
  *
