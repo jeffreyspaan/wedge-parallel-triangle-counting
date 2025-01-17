@@ -8,8 +8,9 @@
  * Assumptions:
  *	- Target GPU is device 0.
  *	- Number of vertices < (uint32_max / 2).
- *	- Number of edges < (uint32__max / 2).
+ *	- Number of edges < (uint32_max / 2).
  *	- Number of wedges < (2^31 - 1) * 128 * spread.
+ * 	- Max degree (after preprocessing) < sqrt(uint32_max)
  */
 
 #include <stdio.h>

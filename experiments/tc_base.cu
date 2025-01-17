@@ -1,4 +1,4 @@
-/* Wedge-Parallel Triangle Counting without reordering
+/* Wedge-Parallel Triangle Counting with no optimizations
  * Jeffrey Spaan, Kuan-Hsun Chen, David Bader, Ana-Lucia Varbanescu
  *
  * Built on the work and code of David Bader. See https://github.com/Bader-Research/triangle-counting/ and https://doi.org/10.1109/HPEC58863.2023.10363539
@@ -299,8 +299,7 @@ ULONG_t tc_GPU(const GRAPH_TYPE *graph, GPU_time *t) {
 	}
 
 	ULONG_t wedgeSum_total = h_wedgeSum[graph->numVertices];
-	printf("wedgeSum_total=%lu\n", wedgeSum_total);
-	exit(0);
+	// printf("wedgeSum_total=%lu\n", wedgeSum_total);
 
 #if BINSEARCH_CONSTANT
 	ULONG_t *h_wedgeSum_cache = (ULONG_t *) malloc(BINSEARCH_CONSTANT_CACHE_SIZE * sizeof(ULONG_t));
@@ -382,7 +381,7 @@ ULONG_t tc_GPU(const GRAPH_TYPE *graph, GPU_time *t) {
 }
 
 void usage() {
-	printf("Wedge Parallel Triangle Counting\n\n");
+	printf("Wedge Parallel Triangle Counting with no optimizations\n\n");
 	printf("Usage:\n\n");
 	printf("Either one of these must be selected:\n");
 	printf(" -m <filename>	[Input graph in Matrix Market format]\n");

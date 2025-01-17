@@ -86,7 +86,7 @@ typedef struct {
 __constant__ ULONG_t c_binary_search_cache[BINSEARCH_CONSTANT_CACHE_SIZE];
 #endif
 
-__device__ INT_t linearSearch_ULONG_GPU(const UINT_t* list, const ULONG_t start, const ULONG_t end, const UINT_t target) {
+__device__ INT_t linear_search_ULONG_GPU(const UINT_t* list, const ULONG_t start, const ULONG_t end, const UINT_t target) {
 	for (ULONG_t i=start; i<end; i++) {
 		if (list[i] == target) {
 			return i;
@@ -98,7 +98,7 @@ __device__ INT_t linearSearch_ULONG_GPU(const UINT_t* list, const ULONG_t start,
 	return -1;
 }
 
-__device__ INT_t binarySearch_ULONG_GPU(const UINT_t* list, const ULONG_t start, const ULONG_t end, const UINT_t target) {
+__device__ INT_t binary_search_ULONG_GPU(const UINT_t* list, const ULONG_t start, const ULONG_t end, const UINT_t target) {
 	ULONG_t s=start, e=end, mid;
 	while (s < e) {
 		mid = (s + e) >> 1;
@@ -114,7 +114,7 @@ __device__ INT_t binarySearch_ULONG_GPU(const UINT_t* list, const ULONG_t start,
 }
 
 
-__device__ UINT_t binarySearch_closest_ULONG_GPU(const ULONG_t* list, const UINT_t start, const UINT_t end, const ULONG_t target) {
+__device__ UINT_t binary_search_closest_ULONG_GPU(const ULONG_t* list, const UINT_t start, const UINT_t end, const ULONG_t target) {
 	/* Finds the index of the rightmost closest value smaller or equal than target, e.g.,
 	 * for target 1 and list=[0,0,0,2,2,2] it returns 2,
 	 * for target 2 and list=[0,0,0,2,2,2] it returns 5.
@@ -137,7 +137,7 @@ __device__ UINT_t binarySearch_closest_ULONG_GPU(const ULONG_t* list, const UINT
 }
 
 #if BINSEARCH_CONSTANT
-__device__ UINT_t binarySearch_closest_ULONG_constant_GPU(const ULONG_t *list, const UINT_t start, const UINT_t end, const ULONG_t target) {
+__device__ UINT_t binary_search_closest_ULONG_constant_GPU(const ULONG_t *list, const UINT_t start, const UINT_t end, const ULONG_t target) {
 	/* Finds the index of the rightmost closest value smaller or equal than target.
 	 * Uses constant memory for the first BINSEARCH_CONSTANT_LEVELS levels.
 	 */
@@ -166,7 +166,7 @@ __device__ UINT_t binarySearch_closest_ULONG_constant_GPU(const ULONG_t *list, c
 	}
 
 	g_s = max2(start, (g_s > 0) ? g_s-1 : 0);
-	return binarySearch_closest_ULONG_GPU(list, g_s, g_e, target);
+	return binary_search_closest_ULONG_GPU(list, g_s, g_e, target);
 }
 #endif
 
@@ -195,9 +195,9 @@ __global__ void tc_GPU_kernel(const ULONG_t *g_Ap, const UINT_t *g_Ai, const ULO
 		if (i == i_start) {
 			/* First wedge. */
 #if BINSEARCH_CONSTANT
-			v = binarySearch_closest_ULONG_constant_GPU(g_wedgeSum, 0, num_vertices, i_start);
+			v = binary_search_closest_ULONG_constant_GPU(g_wedgeSum, 0, num_vertices, i_start);
 #else
-			v = binarySearch_closest_ULONG_GPU(g_wedgeSum, 0, num_vertices, i_start);
+			v = binary_search_closest_ULONG_GPU(g_wedgeSum, 0, num_vertices, i_start);
 #endif
 
 			vb = g_Ap[v];
@@ -275,11 +275,11 @@ __global__ void tc_GPU_kernel(const ULONG_t *g_Ap, const UINT_t *g_Ai, const ULO
 			ULONG_t we = g_Ap[w+1];
 
 			if (we-wb < 2) {
-				if (linearSearch_ULONG_GPU(g_Ai, wb, we, u) >= 0) {
+				if (linear_search_ULONG_GPU(g_Ai, wb, we, u) >= 0) {
 					atomicAdd_block(shared_count, 1);
 				}
 			} else {
-				if (binarySearch_ULONG_GPU(g_Ai, wb, we, u) >= 0) {
+				if (binary_search_ULONG_GPU(g_Ai, wb, we, u) >= 0) {
 					atomicAdd_block(shared_count, 1);
 				}
 			}
@@ -332,7 +332,7 @@ ULONG_t tc_GPU(const BIG_GRAPH_TYPE *graph, UINT_t spread, UINT_t adjacency_matr
 	assert_malloc(h_adjacency_matrix);
 
 	for (UINT_t v=graph->numVertices - min2(graph->numVertices, adjacency_matrix_len); v<graph->numVertices; v++) {
-		for (UINT_t i=graph->rowPtr[v]; i<graph->rowPtr[v+1]; i++) {
+		for (ULONG_t i=graph->rowPtr[v]; i<graph->rowPtr[v+1]; i++) {
 			UINT_t w = graph->colInd[i];
 
 			ULONG_t adjacency_i = (adjacency_matrix_size - (((ULONG_t) (graph->numVertices-v) * (ULONG_t) ((graph->numVertices-v)-1)) / 2)) + w - v - 1;
@@ -350,7 +350,7 @@ ULONG_t tc_GPU(const BIG_GRAPH_TYPE *graph, UINT_t spread, UINT_t adjacency_matr
 	h_wedgeSum[0] = 0;
 
 	for (UINT_t v=0; v<graph->numVertices; v++) {
-		UINT_t d_v = graph->rowPtr[(v+1)] - graph->rowPtr[v];
+		ULONG_t d_v = graph->rowPtr[(v+1)] - graph->rowPtr[v];
 		if (d_v < 2) {
 			h_wedgeSum[v+1] = h_wedgeSum[v];
 		} else {

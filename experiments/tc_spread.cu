@@ -1,4 +1,4 @@
-/* Wedge-Parallel Triangle Counting with reordering and spread
+/* Wedge-Parallel Triangle Counting with reordering and spreading
  * Jeffrey Spaan, Kuan-Hsun Chen, David Bader, Ana-Lucia Varbanescu
  *
  * Built on the work and code of David Bader. See https://github.com/Bader-Research/triangle-counting/ and https://doi.org/10.1109/HPEC58863.2023.10363539
@@ -8,8 +8,9 @@
  * Assumptions:
  *	- Target GPU is device 0.
  *	- Number of vertices < (uint32_max / 2).
- *	- Number of edges < (uint32__max / 2).
+ *	- Number of edges < (uint32_max / 2).
  *	- Number of wedges < (2^31 - 1) * 128 * spread.
+ * 	- Max degree (after preprocessing) < sqrt(uint32_max)
  */
 
 #include <stdio.h>
@@ -384,7 +385,7 @@ ULONG_t tc_GPU(const GRAPH_TYPE *graph, UINT_t spread, GPU_time *t) {
 }
 
 void usage() {
-	printf("Wedge Parallel Triangle Counting\n\n");
+	printf("Wedge Parallel Triangle Counting with reordering and spreading\n\n");
 	printf("Usage:\n\n");
 	printf("Either one of these must be selected:\n");
 	printf(" -m <filename>	[Input graph in Matrix Market format]\n");

@@ -20,7 +20,7 @@ CUDA_LINK_LIBS = -lcudart
 SRCS_CUDA = $(wildcard *.cu)
 OBJS_CUDA = $(SRCS_CUDA:.cu=.o)
 
-all: edge_get tc_edge tc_vertex tc_base tc_reordered tc_spread tc_big_graphs tc_arrow
+all: edge_get tc_edge tc_vertex tc_base tc_reordered tc_spread tc_arrow tc_big_graphs tc_big_graphs_base tc_big_graphs_reordered tc_big_graphs_spread tc_big_graphs_edge tc_big_graphs_vertex
 
 %.o: %.cu
 	${NVCC} ${NVCC_FLAGS} -dc $< -o $@ $(NVCC_LIBS)
@@ -43,11 +43,26 @@ tc_reordered: tc_reordered.o
 tc_spread: tc_spread.o
 	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_spread.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
 
-tc_big_graphs: tc_big_graphs.o
-	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_big_graphs.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
-
 tc_arrow: tc_arrow.o
 	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_arrow.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
 
+tc_big_graphs: tc_big_graphs.o
+	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_big_graphs.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
+
+tc_big_graphs_base: tc_big_graphs_base.o
+	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_big_graphs_base.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
+
+tc_big_graphs_reordered: tc_big_graphs_reordered.o
+	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_big_graphs_reordered.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
+
+tc_big_graphs_spread: tc_big_graphs_spread.o
+	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_big_graphs_spread.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
+
+tc_big_graphs_edge: tc_big_graphs_edge.o
+	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_big_graphs_edge.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
+
+tc_big_graphs_vertex: tc_big_graphs_vertex.o
+	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_big_graphs_vertex.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
+
 clean: 
-	rm -f *~ $(OBJS_CUDA) edge_get tc_edge tc_vertex tc_base tc_reordered tc_spread tc_big_graphs tc_arrow
+	rm -f *~ $(OBJS_CUDA) edge_get tc_edge tc_vertex tc_base tc_reordered tc_spread tc_arrow tc_big_graphs tc_big_graphs_base tc_big_graphs_reordered tc_big_graphs_spread tc_big_graphs_edge tc_big_graphs_vertex
