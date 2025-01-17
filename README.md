@@ -39,6 +39,16 @@ gives the following output:
     $ Amazon0302.mtx                                                         262111           899792                5             8192           717719         0.056998         0.002393         0.000438         0.002831         0.004080
     $ ...
 
+## Experiments
+
+The experiments folder contains all implementations of all additional algorithms used in the paper. This includes:
+
+- implementations for different edge-retrieval strategies.
+- an implementation for a wedge-parallel arrow-wedge-style algorithm.
+- implementations for the vertex- and edge-parallel algorithms (with outgoing, arrow, and mixed wedge styles).
+- implementations for WeTriC without optimizations, WeTriC with reordering, and WeTriC with reordering and spreading (note: for WeTriC with reordering, spreading, and cooperation use the main implementation with `-a` set to `0`).
+- implementations for versions of most of the above algorithms able to handle very large graphs (m > 2^32), see the `tc_big_graphs...` files.
+
 ## Reference
 
 [...]
