@@ -20,13 +20,25 @@ CUDA_LINK_LIBS = -lcudart
 SRCS_CUDA = $(wildcard *.cu)
 OBJS_CUDA = $(SRCS_CUDA:.cu=.o)
 
-all: edge_get tc_edge tc_vertex tc_base tc_reordered tc_spread tc_arrow tc_big_graphs tc_big_graphs_base tc_big_graphs_reordered tc_big_graphs_spread tc_big_graphs_edge tc_big_graphs_vertex
+all: edge_get edge_get_big_graphs sample_degrees tc_cycles tc_big_graphs_cycles tc_edge tc_vertex tc_base tc_reordered tc_spread tc_arrow tc_big_graphs tc_big_graphs_arrow tc_big_graphs_base tc_big_graphs_reordered tc_big_graphs_spread tc_big_graphs_edge tc_big_graphs_vertex
 
 %.o: %.cu
 	${NVCC} ${NVCC_FLAGS} -dc $< -o $@ $(NVCC_LIBS)
 
 edge_get: edge_get.o
 	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ edge_get.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
+
+edge_get_big_graphs: edge_get_big_graphs.o
+	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ edge_get_big_graphs.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
+
+sample_degrees: sample_degrees.o
+	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ sample_degrees.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
+
+tc_cycles: tc_cycles.o
+	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_cycles.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
+
+tc_big_graphs_cycles: tc_big_graphs_cycles.o
+	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_big_graphs_cycles.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
 
 tc_edge: tc_edge.o
 	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_edge.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
@@ -49,6 +61,9 @@ tc_arrow: tc_arrow.o
 tc_big_graphs: tc_big_graphs.o
 	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_big_graphs.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
 
+tc_big_graphs_arrow: tc_big_graphs_arrow.o
+	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_big_graphs_arrow.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
+
 tc_big_graphs_base: tc_big_graphs_base.o
 	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_big_graphs_base.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
 
@@ -64,5 +79,5 @@ tc_big_graphs_edge: tc_big_graphs_edge.o
 tc_big_graphs_vertex: tc_big_graphs_vertex.o
 	${NVCC} ${NVCC_FLAGS} -Xcompiler "$(CFLAGS)" -o $@ tc_big_graphs_vertex.o $(CUDA_INC_DIR) $(CUDA_LIB_DIR) -lm $(CUDA_LINK_LIBS)
 
-clean: 
-	rm -f *~ $(OBJS_CUDA) edge_get tc_edge tc_vertex tc_base tc_reordered tc_spread tc_arrow tc_big_graphs tc_big_graphs_base tc_big_graphs_reordered tc_big_graphs_spread tc_big_graphs_edge tc_big_graphs_vertex
+clean:
+	rm -f *~ $(OBJS_CUDA) edge_get edge_get_big_graphs sample_degrees tc_cycles tc_big_graphs_cycles tc_edge tc_vertex tc_base tc_reordered tc_spread tc_arrow tc_big_graphs tc_big_graphs_arrow tc_big_graphs_base tc_big_graphs_reordered tc_big_graphs_spread tc_big_graphs_edge tc_big_graphs_vertex

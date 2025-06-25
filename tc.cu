@@ -79,7 +79,7 @@ typedef struct {
 } GPU_time;
 
 /*********
- *	GPU	*
+ *  GPU  *
  *********/
 
 #if BINSEARCH_CONSTANT
@@ -293,7 +293,7 @@ __global__ void tc_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const ULON
 }
 
 /*********
- *	CPU	*
+ *  CPU  *
  *********/
 
 static void assert_malloc(const void *ptr) {
@@ -561,7 +561,7 @@ UINT_t *sort_colInd_GPU(UINT_t *d_rowPtr, UINT_t *d_colInd_in, UINT_t *d_colInd_
 GRAPH_TYPE *read_graph(char *filename, bool matrix_market, bool zero_indexed, preprocess_t preprocess_style) {
 	FILE *infile = fopen(filename, "r");
 	if (infile == NULL) {
-		printf("ERROR: unable to open graph file.\n");
+		fprintf(stderr, "ERROR: unable to open graph file.\n");
 		usage();
 	}
 
@@ -875,6 +875,8 @@ int main(int argc, char **argv) {
 				argv+=2;
 				argc-=2;
 				break;
+			default:
+				usage();
 		}
 	}
 

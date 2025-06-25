@@ -1,9 +1,9 @@
-# Wedge-Parallel Triangle Counting
-See [...]
+# WeTriC: Wedge-Parallel Triangle Counting for GPUs
+This repository contains the source code for the WeTriC algorithm from the paper "Wedge-Parallel Triangle Counting for GPUs". For the complete artifact, visit the [Zenodo](https://doi.org/10.5281/zenodo.15611507) repository.
 
 ## Requirements
 
-CUDA (tested on 12.4), cub (part of [CCCL](https://github.com/nvidia/cccl)) (included in the CUDA Toolkit), a c++ compiler.
+CUDA (tested on 12.3), cub (part of [CCCL](https://github.com/nvidia/cccl)) (included in the CUDA Toolkit), a c++ compiler.
 
 ## Compile & run
 
@@ -11,7 +11,7 @@ To compile the code use (and match your target architecture in the `Makefile`, t
 
     $ make
 
-This creates one executable named `tc` which includes both the preprocessing and the GPU code.
+This creates one executable named `tc` which includes both the preprocessing (reading the graph, reodering, etc.) and the GPU code.
 
 To clean use:
 
@@ -19,11 +19,11 @@ To clean use:
 
 To run the code:
 
-    $ ./tc -m <Matrix Market graph> -s <spread> -a <adjacency matrix length>
+    $ ./tc -e <edge list graph> -s <spread> -a <adjacency matrix length>
 
 or: 
 
-    $ ./tc -e <edge list graph> -s <spread> -a <adjacency matrix length>
+    $ ./tc -m <Matrix Market graph> -s <spread> -a <adjacency matrix length>
 
 Run `./tc` for more usage information.
 

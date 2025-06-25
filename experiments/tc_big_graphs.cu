@@ -79,7 +79,7 @@ typedef struct {
 } GPU_time;
 
 /*********
- *	GPU	*
+ *  GPU  *
  *********/
 
 #if BINSEARCH_CONSTANT
@@ -293,7 +293,7 @@ __global__ void tc_GPU_kernel(const ULONG_t *g_Ap, const UINT_t *g_Ai, const ULO
 }
 
 /*********
- *	CPU	*
+ *  CPU  *
  *********/
 
 static void assert_malloc(const void *ptr) {
@@ -391,7 +391,6 @@ ULONG_t tc_GPU(const BIG_GRAPH_TYPE *graph, UINT_t spread, UINT_t adjacency_matr
 	checkCudaErrors(cudaEventElapsedTime(&GPU_copy_elapsed, GPU_copy_start, GPU_copy_stop));
 	t->copy += GPU_copy_elapsed;
 
-
 	UINT_t num_threads = 128;
 	ULONG_t max_blocks = (((ULONG_t) 1 << 31)-1);
 	ULONG_t max_wedges = max_blocks * spread * num_threads; // max wedges in a single launch
@@ -451,15 +450,15 @@ void usage() {
 	printf("Wedge Parallel Triangle Counting for big graphs\n\n");
 	printf("Usage:\n\n");
 	printf("Either one of these must be selected:\n");
-	printf(" -m <filename>	[Input graph in Matrix Market format]\n");
-	printf(" -e <filename>	[Input graph in edge list format]\n");
+	printf(" -m <filename>        [Input graph in Matrix Market format]\n");
+	printf(" -e <filename>        [Input graph in edge list format]\n");
 	printf("Required arguments:\n");
-	printf(" -s <num>		 	 	[Spread, a.k.a. wedges/thread]\n");
-	printf(" -a <num>				[Adjacency matrix length] (must be divisble by 32)\n");
+	printf(" -s <num>             [Spread, a.k.a. wedges/thread]\n");
+	printf(" -a <num>             [Adjacency matrix length] (must be divisble by 32)\n");
 	printf("Optional arguments:\n");
-	printf(" -l <num>				[Loop count]\n");
-	printf(" -z							[Input graph is zero-indexed]\n");
-	printf(" -p							[Preprocessing style, 0:CPU, 1:GPU, 2:GPU low-memory (default)]\n");
+	printf(" -l <num>             [Loop count]\n");
+	printf(" -z                   [Input graph is zero-indexed]\n");
+	printf(" -p                   [Preprocessing style, 0:CPU, 1:GPU, 2:GPU low-memory (default)]\n");
 	printf("\n");
 	printf("Example:\n");
 	printf("./tc_big_graphs -m Amazon0302.mtx -s 5 -a 8192 -l 10\n");
@@ -568,7 +567,7 @@ UINT_t *sort_colInd_GPU(ULONG_t *d_rowPtr, UINT_t *d_colInd_in, UINT_t *d_colInd
 BIG_GRAPH_TYPE *read_graph(char *filename, bool matrix_market, bool zero_indexed, preprocess_t preprocess_style) {
 	FILE *infile = fopen(filename, "r");
 	if (infile == NULL) {
-		printf("ERROR: unable to open graph file.\n");
+		fprintf(stderr, "ERROR: unable to open graph file.\n");
 		usage();
 	}
 

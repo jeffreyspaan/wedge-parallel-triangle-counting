@@ -83,14 +83,14 @@ typedef struct {
 } GPU_time;
 
 /*********
- *	GPU	*
+ *  GPU  *
  *********/
 
 #if BINSEARCH_CONSTANT
 __constant__ ULONG_t c_binary_search_cache[BINSEARCH_CONSTANT_CACHE_SIZE];
 #endif
 
-__device__ INT_t linearSearch_GPU(const UINT_t* list, const UINT_t start, const UINT_t end, const UINT_t target) {
+__device__ INT_t linear_search_GPU(const UINT_t* list, const UINT_t start, const UINT_t end, const UINT_t target) {
 	for (UINT_t i=start; i<end; i++) {
 		if (list[i] == target) {
 			return i;
@@ -102,7 +102,7 @@ __device__ INT_t linearSearch_GPU(const UINT_t* list, const UINT_t start, const 
 	return -1;
 }
 
-__device__ INT_t binarySearch_GPU(const UINT_t* list, const UINT_t start, const UINT_t end, const UINT_t target) {
+__device__ INT_t binary_search_GPU(const UINT_t* list, const UINT_t start, const UINT_t end, const UINT_t target) {
 	UINT_t s=start, e=end, mid;
 	while (s < e) {
 		mid = (s + e) >> 1;
@@ -118,7 +118,7 @@ __device__ INT_t binarySearch_GPU(const UINT_t* list, const UINT_t start, const 
 }
 
 
-__device__ UINT_t binarySearch_closest_ULONG_GPU(const ULONG_t* list, const UINT_t start, const UINT_t end, const ULONG_t target) {
+__device__ UINT_t binary_search_closest_ULONG_GPU(const ULONG_t* list, const UINT_t start, const UINT_t end, const ULONG_t target) {
 	/* Finds the index of the rightmost closest value smaller or equal than target, e.g.,
 	 * for target 1 and list=[0,0,0,2,2,2] it returns 2,
 	 * for target 2 and list=[0,0,0,2,2,2] it returns 5.
@@ -141,7 +141,7 @@ __device__ UINT_t binarySearch_closest_ULONG_GPU(const ULONG_t* list, const UINT
 }
 
 #if BINSEARCH_CONSTANT
-__device__ UINT_t binarySearch_closest_ULONG_constant_GPU(const ULONG_t *list, const UINT_t start, const UINT_t end, const ULONG_t target) {
+__device__ UINT_t binary_search_closest_ULONG_constant_GPU(const ULONG_t *list, const UINT_t start, const UINT_t end, const ULONG_t target) {
 	/* Finds the index of the rightmost closest value smaller or equal than target.
 	 * Uses constant memory for the first BINSEARCH_CONSTANT_LEVELS levels.
 	 */
@@ -170,7 +170,7 @@ __device__ UINT_t binarySearch_closest_ULONG_constant_GPU(const ULONG_t *list, c
 	}
 
 	g_s = max2(start, (g_s > 0) ? g_s-1 : 0);
-	return binarySearch_closest_ULONG_GPU(list, g_s, g_e, target);
+	return binary_search_closest_ULONG_GPU(list, g_s, g_e, target);
 }
 #endif
 
@@ -193,9 +193,9 @@ __global__ void tc_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const ULON
 		if (i == i_start) {
 			/* First wedge. */
 #if BINSEARCH_CONSTANT
-			v = binarySearch_closest_ULONG_constant_GPU(g_wedgeSum, 0, num_vertices, i_start);
+			v = binary_search_closest_ULONG_constant_GPU(g_wedgeSum, 0, num_vertices, i_start);
 #else
-			v = binarySearch_closest_ULONG_GPU(g_wedgeSum, 0, num_vertices, i_start);
+			v = binary_search_closest_ULONG_GPU(g_wedgeSum, 0, num_vertices, i_start);
 #endif
 
 			vb = g_Ap[v];
@@ -243,11 +243,11 @@ __global__ void tc_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const ULON
 		UINT_t we = g_Ap[w+1];
 
 		if (we-wb < 2) {
-			if (linearSearch_GPU(g_Ai, wb, we, u) >= 0) {
+			if (linear_search_GPU(g_Ai, wb, we, u) >= 0) {
 				count++;
 			}
 		} else {
-			if (binarySearch_GPU(g_Ai, wb, we, u) >= 0) {
+			if (binary_search_GPU(g_Ai, wb, we, u) >= 0) {
 				count++;
 			}
 		}
@@ -263,7 +263,7 @@ __global__ void tc_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const ULON
 }
 
 /*********
- *	CPU	*
+ *  CPU  *
  *********/
 
 static void assert_malloc(const void *ptr) {
@@ -392,7 +392,6 @@ void usage() {
 	printf(" -e <filename>	[Input graph in edge list format]\n");
 	printf("Required arguments:\n");
 	printf(" -s <num>		 	 	[Spread, a.k.a. wedges/thread]\n");
-	printf(" -a <num>				[Adjacency matrix length] (must be divisble by 32)\n");
 	printf("Optional arguments:\n");
 	printf(" -l <num>				[Loop count]\n");
 	printf(" -z							[Input graph is zero-indexed]\n");
@@ -505,7 +504,7 @@ UINT_t *sort_colInd_GPU(UINT_t *d_rowPtr, UINT_t *d_colInd_in, UINT_t *d_colInd_
 GRAPH_TYPE *read_graph(char *filename, bool matrix_market, bool zero_indexed, preprocess_t preprocess_style) {
 	FILE *infile = fopen(filename, "r");
 	if (infile == NULL) {
-		printf("ERROR: unable to open graph file.\n");
+		fprintf(stderr, "ERROR: unable to open graph file.\n");
 		usage();
 	}
 
@@ -734,27 +733,6 @@ void free_graph(GRAPH_TYPE *graph) {
 	free(graph->rowPtr);
 	free(graph->colInd);
 	free(graph);
-}
-
-void print_degrees(GRAPH_TYPE *graph, const char *filename, UINT_t num, bool oneify) {
-	FILE *outfile = fopen(filename, "w");
-
-	printf("n=%u step=%u\n", graph->numVertices, max2(1,(graph->numVertices / num)));
-
-	for (UINT_t v=0; v<graph->numVertices; v += max2(1,(graph->numVertices / num))) {
-		if (oneify) {
-			UINT_t degree = 0;
-			for (UINT_t i=graph->rowPtr[v]; i<graph->rowPtr[v+1]; i++) {
-				if (graph->colInd[i] > v)
-					degree++;
-			}
-			fprintf(outfile, "%u %u\n", v, degree);
-		} else {
-			fprintf(outfile, "%u %u\n", v, graph->rowPtr[v+1]-graph->rowPtr[v]);
-		}
-	}
-
-	fclose(outfile);
 }
 
 int main(int argc, char **argv) {

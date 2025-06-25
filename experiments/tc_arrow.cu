@@ -79,7 +79,7 @@ typedef struct {
 } GPU_time;
 
 /*********
- *	GPU	*
+ *  GPU  *
  *********/
 
 #if BINSEARCH_CONSTANT
@@ -171,10 +171,6 @@ __device__ UINT_t binary_search_closest_ULONG_constant_GPU(const ULONG_t *list, 
 #endif
 
 __global__ void tc_arrow_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, const ULONG_t *g_wedge_vp, const ULONG_t *g_wedge_vi, const ULONG_t wedgeSum_total, const UINT_t num_vertices, ULONG_t *g_total_count, const UINT_t spread, const UINT_t *g_adjacency_matrix, const UINT_t adjacency_matrix_len, const ULONG_t adjacency_matrix_size) {
-	/* Wedge-parallel. */
-	/* Direction-oriented. */
-	/* Supports 0- and 1-degree vertices. */
-	/* Indexes into an imaginary wedges array (with wedgeSum as pointer). */
 	const ULONG_t i_start = ((ULONG_t) blockIdx.x * blockDim.x + threadIdx.x) * spread;
 
 	extern __shared__ UINT_t sdata[];
@@ -185,7 +181,6 @@ __global__ void tc_arrow_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, cons
 	UINT_t v;
 	UINT_t vb;        // Start index of adj(v)
 	UINT_t ve;        // End index of adj(v)
-	UINT_t d_v;       // Degree of v
 
 	UINT_t w;
 	UINT_t u;
@@ -204,7 +199,6 @@ __global__ void tc_arrow_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, cons
 
 			vb = g_Ap[v];
 			ve = g_Ap[v+1];
-			d_v = ve - vb;
 
 			e = binary_search_closest_ULONG_GPU(g_wedge_vi, vb, ve, i_start);
 
@@ -216,8 +210,7 @@ __global__ void tc_arrow_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, cons
 				v++;
 				vb = ve;
 				ve = g_Ap[v+1];
-				d_v = ve-vb;
-			} while (d_v < 2);
+			} while (i >= g_wedge_vp[v+1]);
 
 			e = vb;
 
@@ -296,7 +289,7 @@ __global__ void tc_arrow_GPU_kernel(const UINT_t *g_Ap, const UINT_t *g_Ai, cons
 }
 
 /*********
- *	CPU	*
+ *  CPU  *
  *********/
 
 static void assert_malloc(const void *ptr) {
@@ -582,7 +575,7 @@ UINT_t *sort_colInd_GPU(UINT_t *d_rowPtr, UINT_t *d_colInd_in, UINT_t *d_colInd_
 GRAPH_TYPE *read_graph(char *filename, bool matrix_market, bool zero_indexed, preprocess_t preprocess_style) {
 	FILE *infile = fopen(filename, "r");
 	if (infile == NULL) {
-		printf("ERROR: unable to open graph file.\n");
+		fprintf(stderr, "ERROR: unable to open graph file.\n");
 		usage();
 	}
 
@@ -811,27 +804,6 @@ void free_graph(GRAPH_TYPE *graph) {
 	free(graph->rowPtr);
 	free(graph->colInd);
 	free(graph);
-}
-
-void print_degrees(GRAPH_TYPE *graph, const char *filename, UINT_t num, bool oneify) {
-	FILE *outfile = fopen(filename, "w");
-
-	printf("n=%u step=%u\n", graph->numVertices, max2(1,(graph->numVertices / num)));
-
-	for (UINT_t v=0; v<graph->numVertices; v += max2(1,(graph->numVertices / num))) {
-		if (oneify) {
-			UINT_t degree = 0;
-			for (UINT_t i=graph->rowPtr[v]; i<graph->rowPtr[v+1]; i++) {
-				if (graph->colInd[i] > v)
-					degree++;
-			}
-			fprintf(outfile, "%u %u\n", v, degree);
-		} else {
-			fprintf(outfile, "%u %u\n", v, graph->rowPtr[v+1]-graph->rowPtr[v]);
-		}
-	}
-
-	fclose(outfile);
 }
 
 int main(int argc, char **argv) {

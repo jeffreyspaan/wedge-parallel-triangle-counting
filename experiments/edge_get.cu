@@ -8,8 +8,8 @@
  * Assumptions:
  *	- Target GPU is device 0.
  *	- Number of vertices < (uint32_max / 2).
- *	- Number of edges < (uint32__max / 2).
- *	- Number of wedges < (2^31 - 1) * 128 * spread.
+ *	- Number of edges < (uint32_max / 2).
+ * 	- Max degree < uint32_max
  */
 
 #include <stdio.h>
@@ -73,7 +73,7 @@ typedef struct {
 } GPU_time;
 
 /*********
- *	GPU	*
+ *  GPU  *
  *********/
 
 __constant__ UINT_t c_binary_search_cache[BINSEARCH_CONSTANT_CACHE_SIZE];
@@ -225,7 +225,7 @@ __global__ void edge_get_binary_search_cached_GPU_kernel(const UINT_t *g_Ap, con
 }
 
 /*********
- *	CPU	*
+ *  CPU  *
  *********/
 
 static void assert_malloc(const void *ptr) {
@@ -473,10 +473,10 @@ void edge_get_binary_search_GPU(const GRAPH_TYPE *graph, GPU_time *t) {
 
 	/* Confirm (w,v) does not exist (=0) for every edge (v,w). */
 	for (UINT_t i=0; i<graph->numEdges; i++) {
-		// if (h_out[i] != 0) {
-		// 	fprintf(stderr, "Nonzero found.\n");
-		// 	exit(EXIT_FAILURE);
-		// }
+		if (h_out[i] != 0) {
+			fprintf(stderr, "Nonzero found.\n");
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	checkCudaErrors(cudaFree(d_Ap));
@@ -551,10 +551,10 @@ void edge_get_binary_search_cached_GPU(const GRAPH_TYPE *graph, GPU_time *t) {
 
 	/* Confirm (w,v) does not exist (=0) for every edge (v,w). */
 	for (UINT_t i=0; i<graph->numEdges; i++) {
-		// if (h_out[i] != 0) {
-		// 	fprintf(stderr, "Nonzero found.\n");
-		// 	exit(EXIT_FAILURE);
-		// }
+		if (h_out[i] != 0) {
+			fprintf(stderr, "Nonzero found.\n");
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	checkCudaErrors(cudaFree(d_Ap));
@@ -618,7 +618,7 @@ static int compare_vertex_degree_ascending(const void *a, const void *b) {
 GRAPH_TYPE *read_graph(char *filename, bool matrix_market, bool zero_indexed) {
 	FILE *infile = fopen(filename, "r");
 	if (infile == NULL) {
-		printf("ERROR: unable to open graph file.\n");
+		fprintf(stderr, "ERROR: unable to open graph file.\n");
 		usage();
 	}
 
@@ -886,7 +886,7 @@ int main(int argc, char **argv) {
 			t_gpu.exec /= (double) 1000;
 
 			if (warmed_up) {
-						printf("%-60s %16d %16d %24s %16.6f %16.6f %16.6f %16.6f\n",
+				printf("%-60s %16d %16d %24s %16.6f %16.6f %16.6f %16.6f\n",
 					graph_filename, graph->numVertices, graph->numEdges, strats_names[strat], t_gpu.copy, t_gpu.exec, t_gpu.copy + t_gpu.exec, t_cpu);
 			} else {
 				warmed_up = true;
